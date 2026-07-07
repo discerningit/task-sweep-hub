@@ -28,6 +28,7 @@ export {
   clearM365OutlookFlag,
   completeM365TodoTask,
   createM365TodoTask,
+  getM365TodoTaskStatus,
   getM365AccessToken,
   initM365,
   M365_SIGNED_IN_FLAG,

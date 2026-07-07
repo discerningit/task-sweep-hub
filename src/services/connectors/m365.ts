@@ -258,6 +258,11 @@ interface GraphTodoTaskCreated {
   id: string
 }
 
+interface GraphTodoTaskDetail {
+  id: string
+  status?: string
+}
+
 interface GraphTodoTasks {
   value: {
     id: string
@@ -386,6 +391,23 @@ export async function createM365TodoTask(
     body,
   )
   return { id: created.id, listId }
+}
+
+/** Read current status of a To Do task (for inbound sync) */
+export async function getM365TodoTaskStatus(
+  settings: AppSettings,
+  taskId: string,
+  listId?: string,
+): Promise<string | null> {
+  const token = await acquireToken(settings)
+  if (!token) return null
+
+  const resolvedListId = await resolveTodoListId(token, taskId, listId)
+  const task = await graphGet<GraphTodoTaskDetail>(
+    token,
+    `/me/todo/lists/${resolvedListId}/tasks/${taskId}`,
+  )
+  return task.status ?? null
 }
 
 /** Mark a Microsoft To Do task completed in Graph */

@@ -57,6 +57,9 @@ function App() {
         if (result.pushFailedCount > 0) {
           summary += ` ${result.pushFailedCount} failed to push to To Do.`
         }
+        if (result.completedFromTodoCount > 0) {
+          summary += ` ${result.completedFromTodoCount} marked done from To Do.`
+        }
         setSweepSummary(summary)
         if (result.beacons.length > 0) setBeaconAlerts(result.beacons)
         await refresh()

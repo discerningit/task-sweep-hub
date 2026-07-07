@@ -9,10 +9,12 @@ import {
   getSettings,
   saveSettings,
   saveTask,
+  saveTasks,
 } from '../db/indexedDb'
 import type { AppSettings, Task } from '../types/task'
 import { completeTask, snoozeTask } from '../services/syncBack'
 import { initM365, M365_SIGNED_IN_FLAG, syncM365ClientId } from '../services/connectors'
+import { reconcileToDoCompletions } from '../services/primaryToolPush'
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -31,7 +33,23 @@ export function useTasks() {
       sessionStorage.removeItem(M365_SIGNED_IN_FLAG)
       setMessage('Signed in to Microsoft 365')
     }
-    setTasks(allTasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
+
+    let tasksToShow = allTasks
+    if (appSettings.m365ClientId) {
+      const reconcile = await reconcileToDoCompletions(allTasks, appSettings)
+      if (reconcile.updated.length > 0) {
+        await saveTasks(reconcile.updated)
+        const completedIds = new Set(reconcile.updated.map((t) => t.id))
+        tasksToShow = allTasks.map((t) => completedIds.has(t.id)
+          ? reconcile.updated.find((u) => u.id === t.id)!
+          : t)
+        setMessage(
+          `${reconcile.completedCount} task(s) completed in Microsoft To Do — synced to TaskSweep.`,
+        )
+      }
+    }
+
+    setTasks(tasksToShow.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
     setSettings(appSettings)
     setLoading(false)
   }, [])

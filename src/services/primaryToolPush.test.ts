@@ -1,14 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { AppSettings, Task } from '../types/task'
-import { pushNewTasksToPrimaryTool } from './primaryToolPush'
+import { pushNewTasksToPrimaryTool, reconcileToDoCompletions } from './primaryToolPush'
 
 vi.mock('./connectors/m365', () => ({
   isM365SignedIn: vi.fn(() => true),
   createM365TodoTask: vi.fn(),
+  getM365TodoTaskStatus: vi.fn(),
 }))
 
-import { createM365TodoTask, isM365SignedIn } from './connectors/m365'
-
+import { createM365TodoTask, getM365TodoTaskStatus, isM365SignedIn } from './connectors/m365'
 const settings: AppSettings = {
   enabledAiProviders: ['local'],
   primaryAi: 'local',
@@ -65,5 +65,42 @@ describe('primaryToolPush', () => {
     )
     expect(createM365TodoTask).not.toHaveBeenCalled()
     expect(result.pushedCount).toBe(0)
+  })
+})
+
+describe('reconcileToDoCompletions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(isM365SignedIn).mockReturnValue(true)
+  })
+
+  it('marks hub tasks complete when done in To Do', async () => {
+    vi.mocked(getM365TodoTaskStatus).mockResolvedValue('completed')
+
+    const result = await reconcileToDoCompletions(
+      [
+        task({
+          metadata: { id: 'todo-1', listId: 'list-1', pushedToMsTodo: 'true' },
+          sourceId: 'todo-1',
+        }),
+      ],
+      settings,
+    )
+
+    expect(result.completedCount).toBe(1)
+    expect(result.updated[0].status).toBe('completed')
+    expect(result.updated[0].syncMessage).toContain('To Do')
+  })
+
+  it('leaves open tasks when still open in To Do', async () => {
+    vi.mocked(getM365TodoTaskStatus).mockResolvedValue('notStarted')
+
+    const result = await reconcileToDoCompletions(
+      [task({ metadata: { id: 'todo-1', pushedToMsTodo: 'true' } })],
+      settings,
+    )
+
+    expect(result.completedCount).toBe(0)
+    expect(result.updated).toHaveLength(0)
   })
 })
