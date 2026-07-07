@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   initM365,
   isM365SignedIn,
@@ -16,6 +16,10 @@ interface SettingsPanelProps {
 export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps) {
   const [draft, setDraft] = useState(settings)
   const [m365Status, setM365Status] = useState(isM365SignedIn() ? 'signed-in' : 'signed-out')
+
+  useEffect(() => {
+    setM365Status(isM365SignedIn() ? 'signed-in' : 'signed-out')
+  }, [settings])
 
   const save = () => {
     onSave(draft)

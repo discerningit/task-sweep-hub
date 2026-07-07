@@ -12,6 +12,7 @@ import {
 } from '../db/indexedDb'
 import type { AppSettings, Task } from '../types/task'
 import { completeTask, snoozeTask } from '../services/syncBack'
+import { initM365, syncM365ClientId } from '../services/connectors'
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -24,6 +25,8 @@ export function useTasks() {
       getAllTasks(),
       getSettings(),
     ])
+    syncM365ClientId(appSettings.m365ClientId)
+    if (appSettings.m365ClientId) await initM365(appSettings)
     setTasks(allTasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
     setSettings(appSettings)
     setLoading(false)
@@ -89,6 +92,7 @@ export function useTasks() {
   const updateSettings = useCallback(
     async (next: AppSettings) => {
       await saveSettings(next)
+      syncM365ClientId(next.m365ClientId)
       setSettings(next)
       setMessage('Settings saved')
     },

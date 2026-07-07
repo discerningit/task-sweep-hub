@@ -25,6 +25,9 @@ const SCOPES = [
   'Notes.Read.All',
 ]
 
+/** Mirrored from Settings so the sign-in popup can finish auth immediately */
+export const M365_CLIENT_ID_KEY = 'tasksweep_m365_client_id'
+
 let msalInstance: PublicClientApplication | null = null
 let msalClientId: string | null = null
 let cachedAccount: AccountInfo | null = null
@@ -57,10 +60,44 @@ function getMsal(clientId: string): PublicClientApplication {
   return msalInstance
 }
 
+/** Keep client ID in localStorage so the Microsoft popup can complete sign-in */
+export function syncM365ClientId(clientId?: string): void {
+  if (clientId) {
+    localStorage.setItem(M365_CLIENT_ID_KEY, clientId)
+  } else {
+    localStorage.removeItem(M365_CLIENT_ID_KEY)
+  }
+}
+
+/**
+ * Run before React mounts. When Microsoft redirects back in the popup,
+ * this finishes auth and closes the popup automatically.
+ */
+export async function bootstrapM365Auth(): Promise<void> {
+  const clientId = localStorage.getItem(M365_CLIENT_ID_KEY)
+  if (!clientId) return
+
+  const msal = getMsal(clientId)
+  await msal.initialize()
+  const result = await msal.handleRedirectPromise()
+  if (result?.account) {
+    cachedAccount = result.account
+  } else {
+    const accounts = msal.getAllAccounts()
+    cachedAccount = accounts[0] ?? null
+  }
+
+  if (window.opener && (result || cachedAccount)) {
+    window.close()
+  }
+}
+
 export async function initM365(settings: AppSettings): Promise<boolean> {
   if (!settings.m365ClientId) return false
+  syncM365ClientId(settings.m365ClientId)
   const msal = getMsal(settings.m365ClientId)
   await msal.initialize()
+  await msal.handleRedirectPromise()
   const accounts = msal.getAllAccounts()
   cachedAccount = accounts[0] ?? null
   return true
@@ -70,8 +107,10 @@ export async function signInM365(settings: AppSettings): Promise<AuthenticationR
   if (!settings.m365ClientId) {
     throw new Error('Add your M365 Client ID in Settings first')
   }
+  syncM365ClientId(settings.m365ClientId)
   const msal = getMsal(settings.m365ClientId)
   await msal.initialize()
+  await msal.handleRedirectPromise()
 
   try {
     const result = await msal.acquireTokenPopup({ scopes: SCOPES })
@@ -84,7 +123,10 @@ export async function signInM365(settings: AppSettings): Promise<AuthenticationR
 }
 
 export function isM365SignedIn(): boolean {
-  return cachedAccount !== null
+  if (cachedAccount) return true
+  const clientId = localStorage.getItem(M365_CLIENT_ID_KEY)
+  if (!clientId || !msalInstance) return false
+  return msalInstance.getAllAccounts().length > 0
 }
 
 export async function signOutM365(settings: AppSettings): Promise<void> {

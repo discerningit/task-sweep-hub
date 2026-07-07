@@ -24,9 +24,11 @@ export function getAllConnectors(settings: AppSettings): Connector[] {
 export { setPasteContent, clearPasteContent } from './paste'
 export { setUploadFiles, clearUploadFiles } from './fileUpload'
 export {
+  bootstrapM365Auth,
   initM365,
   signInM365,
   signOutM365,
   isM365SignedIn,
+  syncM365ClientId,
   sweepM365,
 } from './m365'
