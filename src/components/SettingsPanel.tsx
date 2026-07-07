@@ -53,7 +53,9 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         />
       </label>
       <p className="hint">
-        Register at Azure Portal → App registrations. Redirect URI: this app&apos;s URL.
+        Register at Azure Portal → App registrations. Redirect URI must match this app&apos;s
+        URL exactly (e.g. <code>http://localhost:5173</code> for dev, or your Cloudflare /
+        GitHub Pages HTTPS URL after deploy — see DEPLOY.md).
         Permissions: Tasks.Read, Mail.Read, Notes.Read, User.Read.
       </p>
 

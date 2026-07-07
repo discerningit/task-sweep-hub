@@ -1,8 +1,9 @@
+
 # TaskSweep Hub
 
 A minimal, solo-developer-friendly PWA that sweeps tasks from many sources into one central list — with deduplication, beacon-based discovery, and optional Microsoft 365 connectivity.
 
-**Built for:** IT consultants juggling irregular hours, a home build ("Cedar Ridge"), nonprofit leadership, and family tasks.
+**Built for:** IT consultants juggling irregular hours, various home projects, community volunteer projects, and family tasks.
 
 ---
 
@@ -26,6 +27,13 @@ Open the URL shown (usually `http://localhost:5173`) in your browser.
 ### Install as PWA
 
 In Chrome or Edge: click the install icon in the address bar, or use **Menu → Install TaskSweep Hub**. The app works offline for pasted tasks after the first load.
+
+### Deploy to the web (HTTPS / phone install)
+
+See **[DEPLOY.md](./DEPLOY.md)** for step-by-step instructions:
+
+- **Cloudflare Pages** (recommended) — `https://your-app.pages.dev`
+- **GitHub Pages** — `https://<username>.github.io/task-sweep-hub/`
 
 ---
 
