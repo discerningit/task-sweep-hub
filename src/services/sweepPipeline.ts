@@ -13,12 +13,15 @@ import { getAllConnectors } from './connectors'
 import { orchestrateExtraction } from './aiOrchestrator'
 import { deduplicateAgainstExisting } from './deduplication'
 import { scanForBeacons } from './beacon'
+import { pushNewTasksToPrimaryTool } from './primaryToolPush'
 
 export interface SweepResult {
   newTaskCount: number
   totalScanned: number
   beacons: BeaconHit[]
   sources: string[]
+  pushedToTodoCount: number
+  pushFailedCount: number
 }
 
 export async function runSweep(
@@ -49,8 +52,14 @@ export async function runSweep(
   const existing = await getAllTasks()
   const newTasks = deduplicateAgainstExisting(extracted, existing)
 
+  let pushedToTodoCount = 0
+  let pushFailedCount = 0
+
   if (newTasks.length > 0) {
-    await saveTasks(newTasks)
+    const pushResult = await pushNewTasksToPrimaryTool(newTasks, settings)
+    pushedToTodoCount = pushResult.pushedCount
+    pushFailedCount = pushResult.failedCount
+    await saveTasks(pushResult.tasks)
   }
 
   return {
@@ -58,5 +67,7 @@ export async function runSweep(
     totalScanned: allInputs.length,
     beacons,
     sources,
+    pushedToTodoCount,
+    pushFailedCount,
   }
 }

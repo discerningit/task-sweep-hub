@@ -18,7 +18,7 @@ import {
   type AccountInfo,
   type AuthenticationResult,
 } from '@azure/msal-browser'
-import type { AppSettings, Connector, RawInput } from '../../types/task'
+import type { AppSettings, Connector, RawInput, Task, TaskPriority } from '../../types/task'
 
 const SCOPES = [
   'User.Read',
@@ -170,6 +170,56 @@ async function graphPatch(token: string, path: string, body: unknown): Promise<v
   if (!res.ok) throw new Error(`Graph API ${res.status}: ${path}`)
 }
 
+async function graphPost<T>(token: string, path: string, body: unknown): Promise<T> {
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`Graph API ${res.status}: ${path}`)
+  return res.json() as Promise<T>
+}
+
+function toGraphImportance(priority: TaskPriority): string {
+  if (priority === 'urgent' || priority === 'high') return 'high'
+  if (priority === 'low') return 'low'
+  return 'normal'
+}
+
+/** Parse informal due dates into Graph dateTime format */
+export function parseDueDateForGraph(
+  due?: string,
+): { dateTime: string; timeZone: string } | undefined {
+  if (!due?.trim()) return undefined
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(due)) {
+    return { dateTime: `${due.slice(0, 10)}T00:00:00`, timeZone: 'UTC' }
+  }
+
+  const match = due.match(/(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?/)
+  if (!match) return undefined
+
+  const year = match[3]
+    ? match[3].length === 2
+      ? `20${match[3]}`
+      : match[3]
+    : String(new Date().getFullYear())
+  const month = match[1].padStart(2, '0')
+  const day = match[2].padStart(2, '0')
+  return { dateTime: `${year}-${month}-${day}T00:00:00`, timeZone: 'UTC' }
+}
+
+async function getDefaultTodoListId(token: string): Promise<string> {
+  const lists = await graphGet<GraphTodoList>(token, '/me/todo/lists')
+  const defaultList = lists.value?.find((l) => l.wellknownListName === 'defaultList')
+  if (defaultList) return defaultList.id
+  if (lists.value?.[0]) return lists.value[0].id
+  throw new Error('No Microsoft To Do list found on your account')
+}
+
 /** Get a Graph access token (exported for sync-back) */
 export async function getM365AccessToken(settings: AppSettings): Promise<string | null> {
   return acquireToken(settings)
@@ -194,8 +244,18 @@ async function acquireToken(settings: AppSettings): Promise<string | null> {
   }
 }
 
+interface GraphTodoListItem {
+  id: string
+  displayName: string
+  wellknownListName?: string
+}
+
 interface GraphTodoList {
-  value: { id: string; displayName: string }[]
+  value: GraphTodoListItem[]
+}
+
+interface GraphTodoTaskCreated {
+  id: string
 }
 
 interface GraphTodoTasks {
@@ -294,6 +354,38 @@ async function resolveTodoListId(
     if (res.ok) return list.id
   }
   throw new Error('Could not find To Do list for this task. Re-sweep from M365.')
+}
+
+/** Create a new task in Microsoft To Do (default list) */
+export async function createM365TodoTask(
+  settings: AppSettings,
+  task: Pick<Task, 'title' | 'notes' | 'dueDate' | 'priority' | 'tags'>,
+): Promise<{ id: string; listId: string }> {
+  const token = await acquireToken(settings)
+  if (!token) throw new Error('Not signed in to Microsoft 365')
+
+  const listId = await getDefaultTodoListId(token)
+  const body: Record<string, unknown> = {
+    title: task.title,
+    importance: toGraphImportance(task.priority),
+  }
+
+  const due = parseDueDateForGraph(task.dueDate)
+  if (due) body.dueDateTime = due
+
+  const noteParts = [task.notes, task.tags.length ? `Tags: ${task.tags.join(', ')}` : '']
+    .filter(Boolean)
+    .join('\n')
+  if (noteParts) {
+    body.body = { content: noteParts, contentType: 'text' }
+  }
+
+  const created = await graphPost<GraphTodoTaskCreated>(
+    token,
+    `/me/todo/lists/${listId}/tasks`,
+    body,
+  )
+  return { id: created.id, listId }
 }
 
 /** Mark a Microsoft To Do task completed in Graph */

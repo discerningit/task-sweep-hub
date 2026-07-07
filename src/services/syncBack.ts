@@ -29,12 +29,19 @@ export async function completeTask(
     return syncM365OutlookComplete(task, settings)
   }
 
-  if (settings.primaryTaskTool === 'ms-todo' && isM365SignedIn()) {
-    return {
-      success: true,
-      message: 'Marked complete in hub. Task was not from M365 — no source to update.',
-      syncStatus: 'local',
-    }
+  const pushedTodoId = task.metadata?.pushedToMsTodo === 'true'
+    ? (task.sourceId ?? task.metadata?.id)
+    : undefined
+  if (pushedTodoId && settings.primaryTaskTool === 'ms-todo') {
+    return syncM365TodoComplete(
+      {
+        ...task,
+        source: 'm365-todo',
+        sourceId: pushedTodoId,
+        metadata: { ...task.metadata, id: pushedTodoId },
+      },
+      settings,
+    )
   }
 
   return {

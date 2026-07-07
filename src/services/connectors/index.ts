@@ -27,6 +27,7 @@ export {
   bootstrapM365Auth,
   clearM365OutlookFlag,
   completeM365TodoTask,
+  createM365TodoTask,
   getM365AccessToken,
   initM365,
   M365_SIGNED_IN_FLAG,

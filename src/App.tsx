@@ -50,9 +50,14 @@ function App() {
       try {
         if (settings?.m365ClientId) await initM365(settings)
         const result = await runSweep(connectorIds)
-        setSweepSummary(
-          `Found ${result.newTaskCount} new task(s) from ${result.sources.join(', ') || 'no sources'}.`,
-        )
+        let summary = `Found ${result.newTaskCount} new task(s) from ${result.sources.join(', ') || 'no sources'}.`
+        if (result.pushedToTodoCount > 0) {
+          summary += ` Pushed ${result.pushedToTodoCount} to Microsoft To Do.`
+        }
+        if (result.pushFailedCount > 0) {
+          summary += ` ${result.pushFailedCount} failed to push to To Do.`
+        }
+        setSweepSummary(summary)
         if (result.beacons.length > 0) setBeaconAlerts(result.beacons)
         await refresh()
       } catch (err) {

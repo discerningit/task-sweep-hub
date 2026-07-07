@@ -1,0 +1,69 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import type { AppSettings, Task } from '../types/task'
+import { pushNewTasksToPrimaryTool } from './primaryToolPush'
+
+vi.mock('./connectors/m365', () => ({
+  isM365SignedIn: vi.fn(() => true),
+  createM365TodoTask: vi.fn(),
+}))
+
+import { createM365TodoTask, isM365SignedIn } from './connectors/m365'
+
+const settings: AppSettings = {
+  enabledAiProviders: ['local'],
+  primaryAi: 'local',
+  primaryTaskTool: 'ms-todo',
+  beaconMarker: '[TaskSweep-Beacon]',
+  contextTags: [],
+  m365ClientId: 'test-client',
+}
+
+function task(overrides: Partial<Task> = {}): Task {
+  return {
+    id: '1',
+    title: 'New pasted task',
+    priority: 'normal',
+    status: 'open',
+    source: 'paste',
+    tags: [],
+    contentHash: 'x',
+    similarityKey: 'new',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+describe('primaryToolPush', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(isM365SignedIn).mockReturnValue(true)
+    vi.mocked(createM365TodoTask).mockResolvedValue({ id: 'todo-new', listId: 'list-1' })
+  })
+
+  it('pushes paste tasks to Microsoft To Do', async () => {
+    const result = await pushNewTasksToPrimaryTool([task()], settings)
+    expect(createM365TodoTask).toHaveBeenCalled()
+    expect(result.pushedCount).toBe(1)
+    expect(result.tasks[0].metadata?.pushedToMsTodo).toBe('true')
+    expect(result.tasks[0].syncStatus).toBe('synced')
+  })
+
+  it('skips tasks already from m365-todo', async () => {
+    const result = await pushNewTasksToPrimaryTool(
+      [task({ source: 'm365-todo', metadata: { id: 't1', listId: 'l1' } })],
+      settings,
+    )
+    expect(createM365TodoTask).not.toHaveBeenCalled()
+    expect(result.pushedCount).toBe(0)
+  })
+
+  it('does nothing when primary tool is hub-only', async () => {
+    const result = await pushNewTasksToPrimaryTool(
+      [task()],
+      { ...settings, primaryTaskTool: 'hub-only' },
+    )
+    expect(createM365TodoTask).not.toHaveBeenCalled()
+    expect(result.pushedCount).toBe(0)
+  })
+})

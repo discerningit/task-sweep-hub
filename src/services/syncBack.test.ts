@@ -87,4 +87,21 @@ describe('syncBack', () => {
     const result = await completeTask(baseTask({ source: 'paste' }), settings)
     expect(result.syncStatus).toBe('local')
   })
+
+  it('completes pushed To Do tasks when primary tool is ms-todo', async () => {
+    const result = await completeTask(
+      baseTask({
+        source: 'paste',
+        sourceId: 'todo-pushed',
+        metadata: { id: 'todo-pushed', listId: 'list-1', pushedToMsTodo: 'true' },
+      }),
+      { ...settings, primaryTaskTool: 'ms-todo' },
+    )
+    expect(completeM365TodoTask).toHaveBeenCalledWith(
+      expect.objectContaining({ primaryTaskTool: 'ms-todo' }),
+      'todo-pushed',
+      'list-1',
+    )
+    expect(result.syncStatus).toBe('synced')
+  })
 })

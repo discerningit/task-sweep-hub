@@ -53,6 +53,11 @@ export function TaskList({
                 {task.tags.map((tag) => (
                   <span key={tag} className="tag">{tag}</span>
                 ))}
+                {task.syncStatus && task.status === 'open' && (
+                  <span className={`sync-badge sync-${task.syncStatus}`} title={task.syncMessage}>
+                    {syncLabel(task.syncStatus)}
+                  </span>
+                )}
               </div>
               {task.notes && <p className="notes">{task.notes}</p>}
               {task.sourceUrl && (

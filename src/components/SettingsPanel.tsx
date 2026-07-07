@@ -93,7 +93,7 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
       </div>
 
       <label className="field">
-        Primary task tool (for sync-back)
+        Primary task tool (push new tasks + sync on complete)
         <select
           value={draft.primaryTaskTool}
           onChange={(e) =>
