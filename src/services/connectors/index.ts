@@ -25,6 +25,9 @@ export { setPasteContent, clearPasteContent } from './paste'
 export { setUploadFiles, clearUploadFiles } from './fileUpload'
 export {
   bootstrapM365Auth,
+  clearM365OutlookFlag,
+  completeM365TodoTask,
+  getM365AccessToken,
   initM365,
   M365_SIGNED_IN_FLAG,
   signInM365,

@@ -5,7 +5,7 @@
  * 1. Register an app at https://portal.azure.com → App registrations
  * 2. Add redirect URI: http://localhost:5173 and your production URL
  *    (GitHub Pages: https://<user>.github.io/task-sweep-hub/ — include trailing slash)
- * 3. API permissions (delegated): Tasks.Read, Mail.Read, Notes.Read.All, User.Read
+ * 3. API permissions (delegated): Tasks.ReadWrite, Mail.ReadWrite, Notes.Read.All, User.Read
  * 4. Paste the Application (client) ID into Settings in TaskSweep Hub
  *
  * Sign-in uses redirect flow (same window) — more reliable than popups on GitHub Pages.
@@ -22,8 +22,8 @@ import type { AppSettings, Connector, RawInput } from '../../types/task'
 
 const SCOPES = [
   'User.Read',
-  'Tasks.Read',
-  'Mail.Read',
+  'Tasks.ReadWrite',
+  'Mail.ReadWrite',
   'Notes.Read.All',
 ]
 
@@ -158,6 +158,23 @@ async function graphGet<T>(token: string, path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function graphPatch(token: string, path: string, body: unknown): Promise<void> {
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`Graph API ${res.status}: ${path}`)
+}
+
+/** Get a Graph access token (exported for sync-back) */
+export async function getM365AccessToken(settings: AppSettings): Promise<string | null> {
+  return acquireToken(settings)
+}
+
 async function acquireToken(settings: AppSettings): Promise<string | null> {
   if (!settings.m365ClientId) return null
   const msal = getMsal(settings.m365ClientId)
@@ -185,6 +202,7 @@ interface GraphTodoTasks {
   value: {
     id: string
     title: string
+    status?: string
     body?: { content?: string }
     dueDateTime?: { dateTime: string }
     importance?: string
@@ -216,7 +234,7 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
         `/me/todo/lists/${list.id}/tasks?$top=50`,
       )
       for (const task of tasks.value ?? []) {
-        if (task.title?.toLowerCase().includes('completed')) continue
+        if (task.status === 'completed') continue
         inputs.push({
           id: crypto.randomUUID(),
           source: 'm365-todo',
@@ -225,6 +243,7 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
           sourceUrl: `https://to-do.office.com/tasks/id/${task.id}`,
           metadata: {
             id: task.id,
+            listId: list.id,
             listName: list.displayName,
             dueDate: task.dueDateTime?.dateTime ?? '',
             importance: task.importance ?? 'normal',
@@ -256,6 +275,53 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
   }
 
   return inputs
+}
+
+/** Resolve To Do list ID (stored on sweep, or search lists for older tasks) */
+async function resolveTodoListId(
+  token: string,
+  taskId: string,
+  listId?: string,
+): Promise<string> {
+  if (listId) return listId
+
+  const lists = await graphGet<GraphTodoList>(token, '/me/todo/lists')
+  for (const list of lists.value ?? []) {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/todo/lists/${list.id}/tasks/${taskId}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+    if (res.ok) return list.id
+  }
+  throw new Error('Could not find To Do list for this task. Re-sweep from M365.')
+}
+
+/** Mark a Microsoft To Do task completed in Graph */
+export async function completeM365TodoTask(
+  settings: AppSettings,
+  taskId: string,
+  listId?: string,
+): Promise<void> {
+  const token = await acquireToken(settings)
+  if (!token) throw new Error('Not signed in to Microsoft 365')
+
+  const resolvedListId = await resolveTodoListId(token, taskId, listId)
+  await graphPatch(token, `/me/todo/lists/${resolvedListId}/tasks/${taskId}`, {
+    status: 'completed',
+  })
+}
+
+/** Clear Outlook follow-up flag on a message */
+export async function clearM365OutlookFlag(
+  settings: AppSettings,
+  messageId: string,
+): Promise<void> {
+  const token = await acquireToken(settings)
+  if (!token) throw new Error('Not signed in to Microsoft 365')
+
+  await graphPatch(token, `/me/messages/${messageId}`, {
+    flag: { flagStatus: 'notFlagged' },
+  })
 }
 
 export function createM365Connector(getSettings: () => AppSettings): Connector {

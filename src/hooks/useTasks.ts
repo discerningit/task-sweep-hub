@@ -58,8 +58,12 @@ export function useTasks() {
         completedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }
-      await saveTask(updated)
       const result = await completeTask(updated, settings)
+      await saveTask({
+        ...updated,
+        syncStatus: result.syncStatus,
+        syncMessage: result.message,
+      })
       setMessage(result.message)
       await refresh()
     },

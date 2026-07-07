@@ -79,7 +79,14 @@ export function TaskList({
             </div>
           )}
           {task.status === 'completed' && (
-            <span className="done-badge">Completed</span>
+            <div className="done-row">
+              <span className="done-badge">Completed</span>
+              {task.syncStatus && (
+                <span className={`sync-badge sync-${task.syncStatus}`} title={task.syncMessage}>
+                  {syncLabel(task.syncStatus)}
+                </span>
+              )}
+            </div>
           )}
           {task.status === 'snoozed' && task.snoozedUntil && (
             <span className="snooze-badge">
@@ -95,4 +102,14 @@ export function TaskList({
 function priorityIcon(p: Task['priority']): string {
   const map = { urgent: '!!!', high: '!!', normal: '•', low: '·' }
   return map[p]
+}
+
+function syncLabel(status: NonNullable<Task['syncStatus']>): string {
+  const map = {
+    synced: 'Synced to M365',
+    failed: 'Sync failed',
+    skipped: 'Local only',
+    local: 'Hub only',
+  }
+  return map[status]
 }

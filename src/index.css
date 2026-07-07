@@ -376,11 +376,39 @@ button.danger {
   color: var(--accent);
 }
 
+.done-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+
 .done-badge,
 .snooze-badge {
-  display: inline-block;
-  margin-top: 0.5rem;
   font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.sync-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+.sync-synced {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.sync-failed {
+  background: #fdeaea;
+  color: var(--danger);
+}
+
+.sync-skipped,
+.sync-local {
+  background: var(--bg);
   color: var(--muted);
 }
 

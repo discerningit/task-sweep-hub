@@ -69,6 +69,9 @@ export interface Task {
   updatedAt: string
   completedAt?: string
   snoozedUntil?: string
+  /** Result of last sync-back attempt to M365 / primary tool */
+  syncStatus?: 'synced' | 'failed' | 'skipped' | 'local'
+  syncMessage?: string
 }
 
 /** User preferences — all local, no cloud required */
