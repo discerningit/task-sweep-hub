@@ -3,7 +3,8 @@
  *
  * SETUP (one-time, in Azure Portal):
  * 1. Register an app at https://portal.azure.com → App registrations
- * 2. Add redirect URI: http://localhost:5173 (and your production URL)
+ * 2. Add redirect URI: http://localhost:5173 and your production URL
+ *    (GitHub Pages: https://<user>.github.io/task-sweep-hub/ — include trailing slash)
  * 3. API permissions (delegated): Tasks.Read, Mail.Read, Notes.Read, User.Read
  * 4. Paste the Application (client) ID into Settings in TaskSweep Hub
  *
@@ -25,19 +26,33 @@ const SCOPES = [
 ]
 
 let msalInstance: PublicClientApplication | null = null
+let msalClientId: string | null = null
 let cachedAccount: AccountInfo | null = null
 
+/**
+ * MSAL redirect URI must match Azure exactly.
+ * GitHub Pages serves from /task-sweep-hub/, not the domain root.
+ */
+function getRedirectUri(): string {
+  const base = import.meta.env.BASE_URL ?? '/'
+  if (base === '/') {
+    return window.location.origin
+  }
+  return `${window.location.origin}${base.endsWith('/') ? base : `${base}/`}`
+}
+
 function getMsal(clientId: string): PublicClientApplication {
-  if (!msalInstance) {
+  if (!msalInstance || msalClientId !== clientId) {
     msalInstance = new PublicClientApplication({
       auth: {
         clientId,
-        redirectUri: window.location.origin,
+        redirectUri: getRedirectUri(),
       },
       cache: {
         cacheLocation: 'localStorage',
       },
     })
+    msalClientId = clientId
   }
   return msalInstance
 }
