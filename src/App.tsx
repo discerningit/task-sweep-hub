@@ -16,6 +16,8 @@ import { runSweep } from './services/sweepPipeline'
 import { exportTasksCsv } from './services/syncBack'
 import { initM365 } from './services/connectors'
 import type { BeaconHit } from './types/task'
+import { needsDeviceSetup } from './services/settingsPack'
+
 
 type Tab = 'tasks' | 'beacon' | 'settings'
 
@@ -39,6 +41,7 @@ function App() {
   const [filter, setFilter] = useState<'all' | 'open' | 'completed' | 'snoozed'>('open')
   const [sweepSummary, setSweepSummary] = useState<string | null>(null)
   const [beaconAlerts, setBeaconAlerts] = useState<BeaconHit[]>([])
+
 
   const handleSweep = useCallback(
     async (connectorIds: string[]) => {
@@ -109,6 +112,26 @@ function App() {
           </button>
         </nav>
       </header>
+
+      {needsDeviceSetup(settings) && (
+        <div className="onboarding-banner">
+          <div className="onboarding-text">
+            <strong>New device?</strong> Import settings from a computer where TaskSweep is already set up.
+          </div>
+          <div className="onboarding-actions">
+            <button type="button" className="primary" onClick={() => setTab('settings')}>
+              Set up this device
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void updateSettings({ ...settings, setupCompleted: true })}
+            >
+              I&apos;ll enter settings manually
+            </button>
+          </div>
+        </div>
+      )}
 
       {(message || sweepSummary) && (
         <div className="toast" onClick={clearMessage}>

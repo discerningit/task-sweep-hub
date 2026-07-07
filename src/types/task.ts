@@ -85,6 +85,8 @@ export interface AppSettings {
   beaconMarker: string
   /** Context tags the AI should watch for */
   contextTags: string[]
+  /** True after manual setup or importing a device setup pack */
+  setupCompleted?: boolean
 }
 
 export type AiProviderId =

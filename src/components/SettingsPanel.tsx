@@ -6,6 +6,7 @@ import {
   signOutM365,
 } from '../services/connectors'
 import type { AppSettings, PrimaryTaskTool } from '../types/task'
+import { DeviceSetup } from './DeviceSetup'
 
 interface SettingsPanelProps {
   settings: AppSettings
@@ -22,7 +23,15 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
   }, [settings])
 
   const save = () => {
-    onSave(draft)
+    onSave({
+      ...draft,
+      setupCompleted: Boolean(draft.m365ClientId) || draft.setupCompleted,
+    })
+  }
+
+  const handleImport = (imported: AppSettings) => {
+    setDraft(imported)
+    onSave(imported)
   }
 
   const handleM365SignIn = async () => {
@@ -41,7 +50,10 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
   }
 
   return (
-    <section className="panel settings-panel">
+    <>
+      <DeviceSetup settings={draft} onImport={handleImport} />
+
+      <section className="panel settings-panel">
       <h2>Settings</h2>
 
       <label className="field">
@@ -114,5 +126,6 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         <button type="button" className="secondary" onClick={onExport}>Export tasks CSV</button>
       </div>
     </section>
+    </>
   )
 }
