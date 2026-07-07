@@ -26,6 +26,7 @@ export { setUploadFiles, clearUploadFiles } from './fileUpload'
 export {
   bootstrapM365Auth,
   initM365,
+  M365_SIGNED_IN_FLAG,
   signInM365,
   signOutM365,
   isM365SignedIn,

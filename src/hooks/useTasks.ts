@@ -12,7 +12,7 @@ import {
 } from '../db/indexedDb'
 import type { AppSettings, Task } from '../types/task'
 import { completeTask, snoozeTask } from '../services/syncBack'
-import { initM365, syncM365ClientId } from '../services/connectors'
+import { initM365, M365_SIGNED_IN_FLAG, syncM365ClientId } from '../services/connectors'
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -27,6 +27,10 @@ export function useTasks() {
     ])
     syncM365ClientId(appSettings.m365ClientId)
     if (appSettings.m365ClientId) await initM365(appSettings)
+    if (sessionStorage.getItem(M365_SIGNED_IN_FLAG)) {
+      sessionStorage.removeItem(M365_SIGNED_IN_FLAG)
+      setMessage('Signed in to Microsoft 365')
+    }
     setTasks(allTasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
     setSettings(appSettings)
     setLoading(false)

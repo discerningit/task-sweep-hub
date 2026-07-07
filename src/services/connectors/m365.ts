@@ -5,8 +5,10 @@
  * 1. Register an app at https://portal.azure.com → App registrations
  * 2. Add redirect URI: http://localhost:5173 and your production URL
  *    (GitHub Pages: https://<user>.github.io/task-sweep-hub/ — include trailing slash)
- * 3. API permissions (delegated): Tasks.Read, Mail.Read, Notes.Read, User.Read
+ * 3. API permissions (delegated): Tasks.Read, Mail.Read, Notes.Read.All, User.Read
  * 4. Paste the Application (client) ID into Settings in TaskSweep Hub
+ *
+ * Sign-in uses redirect flow (same window) — more reliable than popups on GitHub Pages.
  *
  * In enterprise/VDI: if Graph is blocked, use Paste or File Upload instead.
  */
@@ -25,8 +27,9 @@ const SCOPES = [
   'Notes.Read.All',
 ]
 
-/** Mirrored from Settings so the sign-in popup can finish auth immediately */
+/** Mirrored from Settings for auth bootstrap on page load */
 export const M365_CLIENT_ID_KEY = 'tasksweep_m365_client_id'
+export const M365_SIGNED_IN_FLAG = 'tasksweep_m365_signed_in'
 
 let msalInstance: PublicClientApplication | null = null
 let msalClientId: string | null = null
@@ -60,7 +63,13 @@ function getMsal(clientId: string): PublicClientApplication {
   return msalInstance
 }
 
-/** Keep client ID in localStorage so the Microsoft popup can complete sign-in */
+function refreshCachedAccount(msal: PublicClientApplication): AccountInfo | null {
+  const accounts = msal.getAllAccounts()
+  cachedAccount = accounts[0] ?? null
+  return cachedAccount
+}
+
+/** Keep client ID in localStorage so auth works immediately on page load */
 export function syncM365ClientId(clientId?: string): void {
   if (clientId) {
     localStorage.setItem(M365_CLIENT_ID_KEY, clientId)
@@ -70,26 +79,24 @@ export function syncM365ClientId(clientId?: string): void {
 }
 
 /**
- * Run before React mounts. When Microsoft redirects back in the popup,
- * this finishes auth and closes the popup automatically.
+ * Run before React mounts. Completes sign-in when Microsoft redirects back
+ * to the main app window (not a popup).
  */
-export async function bootstrapM365Auth(): Promise<void> {
+export async function bootstrapM365Auth(): Promise<boolean> {
   const clientId = localStorage.getItem(M365_CLIENT_ID_KEY)
-  if (!clientId) return
+  if (!clientId) return false
 
   const msal = getMsal(clientId)
   await msal.initialize()
   const result = await msal.handleRedirectPromise()
   if (result?.account) {
     cachedAccount = result.account
-  } else {
-    const accounts = msal.getAllAccounts()
-    cachedAccount = accounts[0] ?? null
+    sessionStorage.setItem(M365_SIGNED_IN_FLAG, '1')
+    return true
   }
 
-  if (window.opener && (result || cachedAccount)) {
-    window.close()
-  }
+  refreshCachedAccount(msal)
+  return false
 }
 
 export async function initM365(settings: AppSettings): Promise<boolean> {
@@ -98,11 +105,14 @@ export async function initM365(settings: AppSettings): Promise<boolean> {
   const msal = getMsal(settings.m365ClientId)
   await msal.initialize()
   await msal.handleRedirectPromise()
-  const accounts = msal.getAllAccounts()
-  cachedAccount = accounts[0] ?? null
-  return true
+  refreshCachedAccount(msal)
+  return cachedAccount !== null
 }
 
+/**
+ * Sign in via redirect — the page navigates to Microsoft and back.
+ * No popup window.
+ */
 export async function signInM365(settings: AppSettings): Promise<AuthenticationResult | null> {
   if (!settings.m365ClientId) {
     throw new Error('Add your M365 Client ID in Settings first')
@@ -110,16 +120,18 @@ export async function signInM365(settings: AppSettings): Promise<AuthenticationR
   syncM365ClientId(settings.m365ClientId)
   const msal = getMsal(settings.m365ClientId)
   await msal.initialize()
-  await msal.handleRedirectPromise()
 
-  try {
-    const result = await msal.acquireTokenPopup({ scopes: SCOPES })
-    cachedAccount = result.account
-    return result
-  } catch (err) {
-    console.error('M365 sign-in failed:', err)
-    return null
+  const redirectResult = await msal.handleRedirectPromise()
+  if (redirectResult?.account) {
+    cachedAccount = redirectResult.account
+    return redirectResult
   }
+
+  refreshCachedAccount(msal)
+  if (cachedAccount) return null
+
+  await msal.loginRedirect({ scopes: SCOPES })
+  return null
 }
 
 export function isM365SignedIn(): boolean {
@@ -132,9 +144,10 @@ export function isM365SignedIn(): boolean {
 export async function signOutM365(settings: AppSettings): Promise<void> {
   if (!settings.m365ClientId) return
   const msal = getMsal(settings.m365ClientId)
+  await msal.initialize()
   const account = cachedAccount ?? msal.getAllAccounts()[0]
-  if (account) await msal.logoutPopup({ account })
   cachedAccount = null
+  if (account) await msal.logoutRedirect({ account })
 }
 
 async function graphGet<T>(token: string, path: string): Promise<T> {
@@ -146,18 +159,21 @@ async function graphGet<T>(token: string, path: string): Promise<T> {
 }
 
 async function acquireToken(settings: AppSettings): Promise<string | null> {
-  if (!settings.m365ClientId || !cachedAccount) return null
+  if (!settings.m365ClientId) return null
   const msal = getMsal(settings.m365ClientId)
+  await msal.initialize()
+  const account = cachedAccount ?? refreshCachedAccount(msal)
+  if (!account) return null
+
   try {
     const result = await msal.acquireTokenSilent({
       scopes: SCOPES,
-      account: cachedAccount,
+      account,
     })
     return result.accessToken
   } catch {
-    const result = await msal.acquireTokenPopup({ scopes: SCOPES })
-    cachedAccount = result.account
-    return result.accessToken
+    await msal.acquireTokenRedirect({ scopes: SCOPES, account })
+    return null
   }
 }
 
@@ -205,8 +221,8 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
           id: crypto.randomUUID(),
           source: 'm365-todo',
           content: [task.title, task.body?.content ?? ''].filter(Boolean).join('\n'),
-          sourceUrl: `https://to-do.office.com/tasks/id/${task.id}`,
           receivedAt: now,
+          sourceUrl: `https://to-do.office.com/tasks/id/${task.id}`,
           metadata: {
             id: task.id,
             listName: list.displayName,
@@ -230,8 +246,8 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
         id: crypto.randomUUID(),
         source: 'm365-outlook',
         content: `${msg.subject}\n${msg.bodyPreview}`,
-        sourceUrl: msg.webLink,
         receivedAt: now,
+        sourceUrl: msg.webLink,
         metadata: { id: msg.id, subject: msg.subject },
       })
     }

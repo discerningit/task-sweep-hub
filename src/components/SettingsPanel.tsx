@@ -26,9 +26,13 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
   }
 
   const handleM365SignIn = async () => {
+    onSave(draft)
     await initM365(draft)
     const result = await signInM365(draft)
-    setM365Status(result ? 'signed-in' : 'error')
+    if (result || isM365SignedIn()) {
+      setM365Status('signed-in')
+    }
+    // loginRedirect navigates away — page reloads when Microsoft sends you back
   }
 
   const handleM365SignOut = async () => {
@@ -60,7 +64,8 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         Register at Azure Portal → App registrations. Redirect URI must match this app&apos;s
         URL exactly (e.g. <code>http://localhost:5173</code> for dev, or your Cloudflare /
         GitHub Pages HTTPS URL after deploy — see DEPLOY.md).
-        Permissions: Tasks.Read, Mail.Read, Notes.Read, User.Read.
+        Permissions: Tasks.Read, Mail.Read, Notes.Read.All, User.Read.
+        Sign-in opens Microsoft in this same window (no popup).
       </p>
 
       <div className="m365-auth">
