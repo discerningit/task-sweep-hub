@@ -19,7 +19,7 @@ export function AiSelector({ settings, onChange }: AiSelectorProps) {
     <section className="panel ai-selector">
       <h2>AI extraction</h2>
       <p className="hint">
-        <strong>Local</strong> works offline. Enable others when you add API keys in Settings.
+        <strong>Local</strong> works offline. <strong>Grok</strong> needs an API key in Settings.
       </p>
       <div className="ai-grid">
         {AI_PROVIDERS.map((provider) => {

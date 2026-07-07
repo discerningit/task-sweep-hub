@@ -21,6 +21,7 @@ export interface SettingsPack {
     | 'primaryTaskTool'
     | 'enabledAiProviders'
     | 'primaryAi'
+    | 'grokApiKey'
   >
 }
 
@@ -36,6 +37,7 @@ export function createSettingsPack(settings: AppSettings): SettingsPack {
       primaryTaskTool: settings.primaryTaskTool,
       enabledAiProviders: settings.enabledAiProviders,
       primaryAi: settings.primaryAi,
+      grokApiKey: settings.grokApiKey,
     },
   }
 }

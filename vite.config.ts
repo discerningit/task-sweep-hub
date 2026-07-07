@@ -39,6 +39,15 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    proxy: {
+      '/api/xai': {
+        target: 'https://api.x.ai',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/xai/, ''),
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'node',

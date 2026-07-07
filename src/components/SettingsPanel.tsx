@@ -110,6 +110,23 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
       </label>
 
       <label className="field">
+        Grok API key (xAI)
+        <input
+          type="password"
+          value={draft.grokApiKey ?? ''}
+          onChange={(e) => setDraft({ ...draft, grokApiKey: e.target.value || undefined })}
+          placeholder="xai-… from console.x.ai"
+          autoComplete="off"
+        />
+      </label>
+      <p className="hint">
+        Get a key at <a href="https://console.x.ai" target="_blank" rel="noreferrer">console.x.ai</a>.
+        Stored on this device only. Enable <strong>Grok</strong> under AI extraction and set it as Primary AI.
+        On the live site, Grok calls the xAI API directly; if blocked, use local extraction or run{' '}
+        <code>npm run dev</code> locally (includes a dev proxy).
+      </p>
+
+      <label className="field">
         Context tags (comma-separated, for AI)
         <input
           value={draft.contextTags.join(', ')}

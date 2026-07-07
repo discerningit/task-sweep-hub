@@ -82,6 +82,8 @@ export interface AppSettings {
   primaryAi: AiProviderId
   /** M365 tenant/client config (optional) */
   m365ClientId?: string
+  /** xAI Grok API key (optional, stored locally on device) */
+  grokApiKey?: string
   /** Where completed tasks should sync when possible */
   primaryTaskTool: PrimaryTaskTool
   /** Custom beacon marker text (default: [TaskSweep-Beacon]) */
