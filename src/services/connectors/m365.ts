@@ -5,7 +5,7 @@
  * 1. Register an app at https://portal.azure.com → App registrations
  * 2. Add redirect URI: http://localhost:5173 and your production URL
  *    (GitHub Pages: https://<user>.github.io/task-sweep-hub/ — include trailing slash)
- * 3. API permissions (delegated): Tasks.ReadWrite, Mail.ReadWrite, Notes.Read.All, User.Read
+ * 3. API permissions (delegated): Tasks.ReadWrite, Mail.ReadWrite, Notes.Read, User.Read
  * 4. Paste the Application (client) ID into Settings in TaskSweep Hub
  *
  * Sign-in uses redirect flow (same window) — more reliable than popups on GitHub Pages.
@@ -20,11 +20,21 @@ import {
 } from '@azure/msal-browser'
 import type { AppSettings, Connector, RawInput, Task, TaskPriority } from '../../types/task'
 import { htmlToText } from './onenoteHtml'
+import {
+  buildBeaconTitleFilter,
+  buildGraphQuery,
+  dedupePagesById,
+  encodeOneNoteResourceId,
+  shouldIncludeOneNotePage,
+  sortPagesByModified,
+  type OneNotePageSummary,
+} from './onenotePages'
 
 const SCOPES = [
   'User.Read',
   'Tasks.ReadWrite',
   'Mail.ReadWrite',
+  'Notes.Read',
   'Notes.Read.All',
 ]
 
@@ -293,16 +303,168 @@ interface GraphMessages {
 }
 
 interface GraphOneNotePages {
-  value: {
-    id: string
-    title?: string
-    links?: { oneNoteWebUrl?: { href?: string } }
-    lastModifiedDateTime?: string
-  }[]
+  value: OneNotePageSummary[]
+}
+
+interface GraphOneNoteSections {
+  value: { id: string; displayName?: string }[]
+}
+
+interface GraphPagePreview {
+  previewText?: string
+}
+
+export interface OneNoteSweepResult {
+  inputs: RawInput[]
+  pagesFound: number
+  pagesImported: number
+  error?: string
+}
+
+let lastOneNoteSweepResult: OneNoteSweepResult = {
+  inputs: [],
+  pagesFound: 0,
+  pagesImported: 0,
+}
+
+/** Stats from the most recent OneNote sweep (used by Sweep all sources summary) */
+export function getLastOneNoteSweepResult(): OneNoteSweepResult {
+  return lastOneNoteSweepResult
 }
 
 const ONENOTE_PAGE_LIMIT = 20
 const ONENOTE_CONTENT_LIMIT = 8000
+const ONENOTE_SECTION_PAGE_BATCH = 30
+
+async function listOneNotePagesViaSections(token: string): Promise<OneNotePageSummary[]> {
+  const sections = await graphGet<GraphOneNoteSections>(
+    token,
+    buildGraphQuery('/me/onenote/sections', {
+      $select: 'id,displayName',
+    }),
+  )
+
+  const pages: OneNotePageSummary[] = []
+
+  for (const section of sections.value ?? []) {
+    const sectionPages = await graphGet<GraphOneNotePages>(
+      token,
+      buildGraphQuery(
+        `/me/onenote/sections/${encodeOneNoteResourceId(section.id)}/pages`,
+        {
+          $top: ONENOTE_SECTION_PAGE_BATCH,
+          $orderby: 'createdDateTime desc',
+          $select: 'id,title,links,lastModifiedDateTime',
+        },
+      ),
+    )
+
+    for (const page of sectionPages.value ?? []) {
+      if (!page.id) continue
+      pages.push({
+        ...page,
+        sectionName: section.displayName,
+      })
+    }
+  }
+
+  return pages
+}
+
+async function listOneNotePagesFlat(token: string, limit: number): Promise<OneNotePageSummary[]> {
+  const pages = await graphGet<GraphOneNotePages>(
+    token,
+    buildGraphQuery('/me/onenote/pages', {
+      $top: limit,
+      $orderby: 'createdDateTime desc',
+      $select: 'id,title,links,lastModifiedDateTime',
+    }),
+  )
+  return pages.value ?? []
+}
+
+async function listOneNotePagesByBeaconTitle(
+  token: string,
+  beaconMarker: string,
+): Promise<OneNotePageSummary[]> {
+  const pages = await graphGet<GraphOneNotePages>(
+    token,
+    buildGraphQuery('/me/onenote/pages', {
+      $filter: buildBeaconTitleFilter(beaconMarker),
+      $top: 10,
+      $select: 'id,title,links,lastModifiedDateTime',
+    }),
+  )
+  return pages.value ?? []
+}
+
+function formatOneNoteError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes('403')) {
+    return 'OneNote access denied — add Notes.Read in Azure API permissions, then sign out/in in Settings.'
+  }
+  if (message.includes('401')) {
+    return 'OneNote sign-in expired — open Settings and sign in to Microsoft 365 again.'
+  }
+  return message
+}
+
+async function discoverOneNotePages(
+  token: string,
+  beaconMarker?: string,
+): Promise<{ pages: OneNotePageSummary[]; error?: string }> {
+  const collected: OneNotePageSummary[] = []
+  let lastError: string | undefined
+
+  if (beaconMarker) {
+    try {
+      collected.push(...(await listOneNotePagesByBeaconTitle(token, beaconMarker)))
+    } catch (e) {
+      lastError = formatOneNoteError(e)
+      console.warn('OneNote beacon title search failed:', e)
+    }
+  }
+
+  try {
+    collected.push(...(await listOneNotePagesViaSections(token)))
+  } catch (e) {
+    lastError = formatOneNoteError(e)
+    console.warn('OneNote section page listing failed, falling back to flat query:', e)
+    try {
+      collected.push(...(await listOneNotePagesFlat(token, ONENOTE_PAGE_LIMIT)))
+      lastError = undefined
+    } catch (fallbackError) {
+      lastError = formatOneNoteError(fallbackError)
+      console.warn('OneNote flat page listing failed:', fallbackError)
+    }
+  }
+
+  const pages = sortPagesByModified(dedupePagesById(collected)).slice(0, ONENOTE_PAGE_LIMIT)
+  return { pages, error: pages.length === 0 ? lastError : undefined }
+}
+
+async function readOneNotePageText(token: string, pageId: string): Promise<string> {
+  const encodedId = encodeOneNoteResourceId(pageId)
+
+  try {
+    const html = await graphGetText(token, `/me/onenote/pages/${encodedId}/content`)
+    const text = htmlToText(html)
+    if (text.trim().length > 0) return text
+  } catch (e) {
+    console.warn(`OneNote page ${pageId} content fetch failed:`, e)
+  }
+
+  try {
+    const preview = await graphGet<GraphPagePreview>(
+      token,
+      `/me/onenote/pages/${encodedId}/preview`,
+    )
+    return preview.previewText?.trim() ?? ''
+  } catch (e) {
+    console.warn(`OneNote page ${pageId} preview fetch failed:`, e)
+    return ''
+  }
+}
 
 /** Pull open Microsoft To Do tasks only (no Outlook) */
 export async function sweepM365TodoOnly(settings: AppSettings): Promise<RawInput[]> {
@@ -346,37 +508,39 @@ export async function sweepM365TodoOnly(settings: AppSettings): Promise<RawInput
 }
 
 /** Pull recent OneNote pages and extract text for task mining */
-export async function sweepM365OneNote(settings: AppSettings): Promise<RawInput[]> {
-  const token = await acquireToken(settings)
-  if (!token) return []
+export async function sweepM365OneNote(
+  settings: AppSettings,
+  existingToken?: string,
+): Promise<OneNoteSweepResult> {
+  const token = existingToken ?? (await acquireToken(settings))
+  if (!token) return { inputs: [], pagesFound: 0, pagesImported: 0 }
 
   const inputs: RawInput[] = []
   const now = new Date().toISOString()
+  const beaconMarker = settings.beaconMarker?.trim()
 
-  const pages = await graphGet<GraphOneNotePages>(
-    token,
-    `/me/onenote/pages?$top=${ONENOTE_PAGE_LIMIT}&$orderby=lastModifiedDateTime desc&$select=id,title,links,lastModifiedDateTime`,
-  )
+  const discovery = await discoverOneNotePages(token, beaconMarker)
+  const pages = discovery.pages
 
-  for (const page of pages.value ?? []) {
+  for (const page of pages) {
     if (!page.id) continue
 
     try {
-      const html = await graphGetText(token, `/me/onenote/pages/${page.id}/content`)
-      const text = htmlToText(html).slice(0, ONENOTE_CONTENT_LIMIT)
-      if (text.length < 10) continue
-
       const title = page.title?.trim() || 'OneNote page'
+      const text = (await readOneNotePageText(token, page.id)).slice(0, ONENOTE_CONTENT_LIMIT)
+      if (!shouldIncludeOneNotePage(title, text, beaconMarker)) continue
+
       inputs.push({
         id: crypto.randomUUID(),
         source: 'm365-onenote',
-        content: `${title}\n${text}`,
+        content: `${title}\n${text}`.trim(),
         receivedAt: now,
         sourceUrl: page.links?.oneNoteWebUrl?.href,
         metadata: {
           id: page.id,
           subject: title,
           lastModified: page.lastModifiedDateTime ?? '',
+          ...(page.sectionName ? { sectionName: page.sectionName } : {}),
         },
       })
     } catch (e) {
@@ -384,7 +548,14 @@ export async function sweepM365OneNote(settings: AppSettings): Promise<RawInput[
     }
   }
 
-  return inputs
+  const result: OneNoteSweepResult = {
+    inputs,
+    pagesFound: pages.length,
+    pagesImported: inputs.length,
+    error: discovery.error,
+  }
+  lastOneNoteSweepResult = result
+  return result
 }
 
 /** Pull To Do tasks and flagged emails via Graph */
@@ -421,7 +592,11 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
   }
 
   try {
-    inputs.push(...(await sweepM365OneNote(settings)))
+    const onenote = await sweepM365OneNote(settings, token)
+    inputs.push(...onenote.inputs)
+    if (onenote.pagesFound === 0) {
+      console.warn('M365 OneNote sweep: no pages discovered. Check Notes.Read.All permission and sign-in.')
+    }
   } catch (e) {
     console.warn('M365 OneNote sweep failed:', e)
   }

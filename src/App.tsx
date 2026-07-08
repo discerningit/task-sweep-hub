@@ -12,15 +12,42 @@ import { AiSelector } from './components/AiSelector'
 import { BeaconTools } from './components/BeaconTools'
 import { SettingsPanel } from './components/SettingsPanel'
 import { useTasks } from './hooks/useTasks'
-import { runSweep } from './services/sweepPipeline'
+import { runOneNoteSweep, runSweep, type SweepResult } from './services/sweepPipeline'
 import { runSyncFromTodo } from './services/syncFromTodo'
 import { exportTasksCsv } from './services/syncBack'
-import { initM365 } from './services/connectors'
+import { initM365, isM365SignedIn } from './services/connectors'
 import type { BeaconHit } from './types/task'
 import { needsDeviceSetup } from './services/settingsPack'
 
 
 type Tab = 'tasks' | 'beacon' | 'settings'
+
+function formatSweepSummary(result: SweepResult): string {
+  let summary = `Found ${result.newTaskCount} new task(s) from ${result.sources.join(', ') || 'no sources'}.`
+
+  if (result.onenotePagesFound !== undefined) {
+    summary += ` OneNote: ${result.onenotePagesFound} page(s) found, ${result.onenotePagesImported ?? 0} imported.`
+    if (result.onenoteError) {
+      summary += ` ${result.onenoteError}`
+    } else if (result.onenotePagesFound === 0) {
+      summary += ' Add Notes.Read in Azure API permissions, then sign out/in in Settings.'
+    } else if ((result.onenotePagesImported ?? 0) === 0) {
+      summary += ' Pages were listed but had no readable text — add body content or a beacon in the title.'
+    }
+  }
+
+  if (result.pushedToTodoCount > 0) {
+    summary += ` Pushed ${result.pushedToTodoCount} to Microsoft To Do.`
+  }
+  if (result.pushFailedCount > 0) {
+    summary += ` ${result.pushFailedCount} failed to push to To Do.`
+  }
+  if (result.completedFromTodoCount > 0) {
+    summary += ` ${result.completedFromTodoCount} marked done from To Do.`
+  }
+
+  return summary
+}
 
 function App() {
   const {
@@ -52,17 +79,7 @@ function App() {
       try {
         if (settings?.m365ClientId) await initM365(settings)
         const result = await runSweep(connectorIds)
-        let summary = `Found ${result.newTaskCount} new task(s) from ${result.sources.join(', ') || 'no sources'}.`
-        if (result.pushedToTodoCount > 0) {
-          summary += ` Pushed ${result.pushedToTodoCount} to Microsoft To Do.`
-        }
-        if (result.pushFailedCount > 0) {
-          summary += ` ${result.pushFailedCount} failed to push to To Do.`
-        }
-        if (result.completedFromTodoCount > 0) {
-          summary += ` ${result.completedFromTodoCount} marked done from To Do.`
-        }
-        setSweepSummary(summary)
+        setSweepSummary(formatSweepSummary(result))
         if (result.beacons.length > 0) setBeaconAlerts(result.beacons)
         await refresh()
       } catch (err) {
@@ -73,6 +90,22 @@ function App() {
     },
     [settings, refresh],
   )
+
+  const handleSweepOneNote = useCallback(async () => {
+    setSweeping(true)
+    setSweepSummary(null)
+    try {
+      if (settings?.m365ClientId) await initM365(settings)
+      const result = await runOneNoteSweep()
+      setSweepSummary(formatSweepSummary(result))
+      if (result.beacons.length > 0) setBeaconAlerts(result.beacons)
+      await refresh()
+    } catch (err) {
+      setSweepSummary(err instanceof Error ? err.message : 'OneNote sweep failed')
+    } finally {
+      setSweeping(false)
+    }
+  }, [settings, refresh])
 
   const handleSyncFromTodo = useCallback(async () => {
     setSyncingTodo(true)
@@ -175,7 +208,12 @@ function App() {
       <main className="main">
         {tab === 'tasks' && (
           <>
-            <InputArea onSweep={handleSweep} sweeping={sweeping} />
+            <InputArea
+              onSweep={handleSweep}
+              onSweepOneNote={() => void handleSweepOneNote()}
+              sweeping={sweeping}
+              m365Ready={Boolean(settings.m365ClientId && isM365SignedIn())}
+            />
             <AiSelector
               settings={settings}
               onChange={(next) => void updateSettings(next)}

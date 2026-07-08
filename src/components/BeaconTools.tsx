@@ -32,8 +32,8 @@ export function BeaconTools({ settings, onBeaconFound }: BeaconToolsProps) {
     <section className="panel beacon-tools">
       <h2>Beacon tools</h2>
       <p className="hint">
-        Plant a beacon task titled <code>{settings.beaconMarker}</code> in Outlook,
-        To Do, or any list. Paste from that app here to discover connectivity.
+        Plant a beacon titled <code>{settings.beaconMarker}</code> in Outlook,
+        To Do, OneNote, or any list. Run an M365 sweep or paste from that app here.
       </p>
 
       <div className="beacon-copy">

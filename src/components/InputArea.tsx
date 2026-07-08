@@ -3,10 +3,12 @@ import { setPasteContent, setUploadFiles } from '../services/connectors'
 
 interface InputAreaProps {
   onSweep: (connectorIds: string[]) => void
+  onSweepOneNote?: () => void
   sweeping: boolean
+  m365Ready?: boolean
 }
 
-export function InputArea({ onSweep, sweeping }: InputAreaProps) {
+export function InputArea({ onSweep, onSweepOneNote, sweeping, m365Ready }: InputAreaProps) {
   const [text, setText] = useState('')
 
   const handleSweepPaste = () => {
@@ -63,6 +65,17 @@ export function InputArea({ onSweep, sweeping }: InputAreaProps) {
         >
           Sweep all sources
         </button>
+        {m365Ready && onSweepOneNote && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={onSweepOneNote}
+            disabled={sweeping}
+            title="Pull tasks from recent OneNote pages"
+          >
+            {sweeping ? 'Sweeping…' : 'Sweep OneNote'}
+          </button>
+        )}
       </div>
     </section>
   )

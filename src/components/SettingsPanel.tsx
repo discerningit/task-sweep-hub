@@ -76,7 +76,8 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         Register at Azure Portal → App registrations. Redirect URI must match this app&apos;s
         URL exactly (e.g. <code>http://localhost:5173</code> for dev, or your Cloudflare /
         GitHub Pages HTTPS URL after deploy — see DEPLOY.md).
-        Permissions: Tasks.ReadWrite, Mail.ReadWrite, Notes.Read.All (OneNote), User.Read.
+        Permissions: Tasks.ReadWrite, Mail.ReadWrite, Notes.Read (OneNote), User.Read.
+        Personal Microsoft accounts use Notes.Read (not Notes.Read.All).
         Sign-in opens Microsoft in this same window (no popup).
         After upgrading permissions, sign out and sign in again once.
       </p>

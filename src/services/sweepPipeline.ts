@@ -10,6 +10,11 @@ import {
 } from '../db/indexedDb'
 import type { BeaconHit, RawInput } from '../types/task'
 import { getAllConnectors } from './connectors'
+import {
+  getLastOneNoteSweepResult,
+  isM365SignedIn,
+  sweepM365OneNote,
+} from './connectors/m365'
 import { orchestrateExtraction } from './aiOrchestrator'
 import { deduplicateAgainstExisting } from './deduplication'
 import { scanForBeacons } from './beacon'
@@ -24,30 +29,17 @@ export interface SweepResult {
   pushedToTodoCount: number
   pushFailedCount: number
   completedFromTodoCount: number
+  onenotePagesFound?: number
+  onenotePagesImported?: number
+  onenoteError?: string
 }
 
-export async function runSweep(
-  connectorIds?: string[],
+async function finalizeSweep(
+  allInputs: RawInput[],
+  sources: string[],
+  settings: Awaited<ReturnType<typeof getSettings>>,
+  onenoteStats?: { pagesFound: number; pagesImported: number; error?: string },
 ): Promise<SweepResult> {
-  const settings = await getSettings()
-  const connectors = getAllConnectors(settings).filter(
-    (c) => !connectorIds || connectorIds.includes(c.id),
-  )
-
-  const allInputs: RawInput[] = []
-  const sources: string[] = []
-
-  for (const connector of connectors) {
-    const available = await connector.isAvailable()
-    if (!available) continue
-
-    const inputs = await connector.sweep()
-    if (inputs.length > 0) {
-      sources.push(connector.name)
-      allInputs.push(...inputs)
-    }
-  }
-
   const beacons = scanForBeacons(allInputs, settings)
 
   const extracted = await orchestrateExtraction(allInputs, settings)
@@ -70,6 +62,10 @@ export async function runSweep(
     await saveTasks(reconcile.updated)
   }
 
+  const onenoteImported =
+    onenoteStats?.pagesImported ??
+    allInputs.filter((input) => input.source === 'm365-onenote').length
+
   return {
     newTaskCount: newTasks.length,
     totalScanned: allInputs.length,
@@ -78,5 +74,50 @@ export async function runSweep(
     pushedToTodoCount,
     pushFailedCount,
     completedFromTodoCount: reconcile.completedCount,
+    onenotePagesFound: onenoteStats?.pagesFound,
+    onenotePagesImported: onenoteImported,
+    onenoteError: onenoteStats?.error,
   }
+}
+
+export async function runSweep(
+  connectorIds?: string[],
+): Promise<SweepResult> {
+  const settings = await getSettings()
+  const connectors = getAllConnectors(settings).filter(
+    (c) => !connectorIds || connectorIds.includes(c.id),
+  )
+
+  const allInputs: RawInput[] = []
+  const sources: string[] = []
+  let m365Swept = false
+
+  for (const connector of connectors) {
+    const available = await connector.isAvailable()
+    if (!available) continue
+
+    const inputs = await connector.sweep()
+    if (connector.id === 'm365') m365Swept = true
+    if (inputs.length > 0) {
+      sources.push(connector.name)
+      allInputs.push(...inputs)
+    }
+  }
+
+  const onenoteStats = m365Swept ? getLastOneNoteSweepResult() : undefined
+
+  return finalizeSweep(allInputs, sources, settings, onenoteStats)
+}
+
+/** Sweep OneNote only — useful for testing beacon pages and note-based tasks */
+export async function runOneNoteSweep(): Promise<SweepResult> {
+  const settings = await getSettings()
+  if (!settings.m365ClientId || !isM365SignedIn()) {
+    throw new Error('Sign in to Microsoft 365 in Settings first.')
+  }
+
+  const onenote = await sweepM365OneNote(settings)
+  const sources = onenote.inputs.length > 0 ? ['OneNote'] : []
+
+  return finalizeSweep(onenote.inputs, sources, settings, onenote)
 }
