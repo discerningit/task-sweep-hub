@@ -238,7 +238,7 @@ function App() {
       </main>
 
       <footer className="footer">
-        Local-first · Data stays on this device · MVP: paste + file + M365
+        Local-first · Data stays on this device · M365: To Do, Outlook, OneNote
       </footer>
     </div>
   )

@@ -19,6 +19,7 @@ import {
   type AuthenticationResult,
 } from '@azure/msal-browser'
 import type { AppSettings, Connector, RawInput, Task, TaskPriority } from '../../types/task'
+import { htmlToText } from './onenoteHtml'
 
 const SCOPES = [
   'User.Read',
@@ -158,6 +159,14 @@ async function graphGet<T>(token: string, path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function graphGetText(token: string, path: string): Promise<string> {
+  const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error(`Graph API ${res.status}: ${path}`)
+  return res.text()
+}
+
 async function graphPatch(token: string, path: string, body: unknown): Promise<void> {
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
     method: 'PATCH',
@@ -283,6 +292,18 @@ interface GraphMessages {
   }[]
 }
 
+interface GraphOneNotePages {
+  value: {
+    id: string
+    title?: string
+    links?: { oneNoteWebUrl?: { href?: string } }
+    lastModifiedDateTime?: string
+  }[]
+}
+
+const ONENOTE_PAGE_LIMIT = 20
+const ONENOTE_CONTENT_LIMIT = 8000
+
 /** Pull open Microsoft To Do tasks only (no Outlook) */
 export async function sweepM365TodoOnly(settings: AppSettings): Promise<RawInput[]> {
   const token = await acquireToken(settings)
@@ -324,6 +345,48 @@ export async function sweepM365TodoOnly(settings: AppSettings): Promise<RawInput
   return inputs
 }
 
+/** Pull recent OneNote pages and extract text for task mining */
+export async function sweepM365OneNote(settings: AppSettings): Promise<RawInput[]> {
+  const token = await acquireToken(settings)
+  if (!token) return []
+
+  const inputs: RawInput[] = []
+  const now = new Date().toISOString()
+
+  const pages = await graphGet<GraphOneNotePages>(
+    token,
+    `/me/onenote/pages?$top=${ONENOTE_PAGE_LIMIT}&$orderby=lastModifiedDateTime desc&$select=id,title,links,lastModifiedDateTime`,
+  )
+
+  for (const page of pages.value ?? []) {
+    if (!page.id) continue
+
+    try {
+      const html = await graphGetText(token, `/me/onenote/pages/${page.id}/content`)
+      const text = htmlToText(html).slice(0, ONENOTE_CONTENT_LIMIT)
+      if (text.length < 10) continue
+
+      const title = page.title?.trim() || 'OneNote page'
+      inputs.push({
+        id: crypto.randomUUID(),
+        source: 'm365-onenote',
+        content: `${title}\n${text}`,
+        receivedAt: now,
+        sourceUrl: page.links?.oneNoteWebUrl?.href,
+        metadata: {
+          id: page.id,
+          subject: title,
+          lastModified: page.lastModifiedDateTime ?? '',
+        },
+      })
+    } catch (e) {
+      console.warn(`OneNote page ${page.id} skipped:`, e)
+    }
+  }
+
+  return inputs
+}
+
 /** Pull To Do tasks and flagged emails via Graph */
 export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
   const token = await acquireToken(settings)
@@ -355,6 +418,12 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
     }
   } catch (e) {
     console.warn('M365 Outlook sweep failed:', e)
+  }
+
+  try {
+    inputs.push(...(await sweepM365OneNote(settings)))
+  } catch (e) {
+    console.warn('M365 OneNote sweep failed:', e)
   }
 
   return inputs

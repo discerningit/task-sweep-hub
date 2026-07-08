@@ -38,4 +38,5 @@ export {
   syncM365ClientId,
   sweepM365,
   sweepM365TodoOnly,
+  sweepM365OneNote,
 } from './m365'
