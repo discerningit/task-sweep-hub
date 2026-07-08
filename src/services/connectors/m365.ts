@@ -283,8 +283,8 @@ interface GraphMessages {
   }[]
 }
 
-/** Pull To Do tasks and flagged emails via Graph */
-export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
+/** Pull open Microsoft To Do tasks only (no Outlook) */
+export async function sweepM365TodoOnly(settings: AppSettings): Promise<RawInput[]> {
   const token = await acquireToken(settings)
   if (!token) return []
 
@@ -316,6 +316,24 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
         })
       }
     }
+  } catch (e) {
+    console.warn('M365 To Do sweep failed:', e)
+    throw e
+  }
+
+  return inputs
+}
+
+/** Pull To Do tasks and flagged emails via Graph */
+export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
+  const token = await acquireToken(settings)
+  if (!token) return []
+
+  const inputs: RawInput[] = []
+  const now = new Date().toISOString()
+
+  try {
+    inputs.push(...(await sweepM365TodoOnly(settings)))
   } catch (e) {
     console.warn('M365 To Do sweep failed:', e)
   }

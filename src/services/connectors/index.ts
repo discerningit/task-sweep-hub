@@ -37,4 +37,5 @@ export {
   isM365SignedIn,
   syncM365ClientId,
   sweepM365,
+  sweepM365TodoOnly,
 } from './m365'

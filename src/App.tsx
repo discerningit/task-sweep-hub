@@ -13,6 +13,7 @@ import { BeaconTools } from './components/BeaconTools'
 import { SettingsPanel } from './components/SettingsPanel'
 import { useTasks } from './hooks/useTasks'
 import { runSweep } from './services/sweepPipeline'
+import { runSyncFromTodo } from './services/syncFromTodo'
 import { exportTasksCsv } from './services/syncBack'
 import { initM365 } from './services/connectors'
 import type { BeaconHit } from './types/task'
@@ -37,6 +38,7 @@ function App() {
 
   const [tab, setTab] = useState<Tab>('tasks')
   const [sweeping, setSweeping] = useState(false)
+  const [syncingTodo, setSyncingTodo] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'open' | 'completed' | 'snoozed'>('open')
   const [sweepSummary, setSweepSummary] = useState<string | null>(null)
@@ -71,6 +73,21 @@ function App() {
     },
     [settings, refresh],
   )
+
+  const handleSyncFromTodo = useCallback(async () => {
+    setSyncingTodo(true)
+    setSweepSummary(null)
+    try {
+      if (settings?.m365ClientId) await initM365(settings)
+      const result = await runSyncFromTodo()
+      setSweepSummary(result.message)
+      await refresh()
+    } catch (err) {
+      setSweepSummary(err instanceof Error ? err.message : 'Sync from To Do failed')
+    } finally {
+      setSyncingTodo(false)
+    }
+  }, [settings, refresh])
 
   const handleExport = () => {
     const csv = exportTasksCsv(tasks)
@@ -182,6 +199,15 @@ function App() {
                   <option value="completed">Completed</option>
                   <option value="snoozed">Snoozed</option>
                 </select>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => void handleSyncFromTodo()}
+                  disabled={syncingTodo || sweeping}
+                  title="Pull new tasks and completions from Microsoft To Do only"
+                >
+                  {syncingTodo ? 'Syncing…' : 'Sync from To Do'}
+                </button>
               </div>
               <TaskList
                 tasks={tasks}
