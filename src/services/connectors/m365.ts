@@ -353,7 +353,6 @@ async function listOneNotePagesViaSections(token: string): Promise<OneNotePageSu
         `/me/onenote/sections/${encodeOneNoteResourceId(section.id)}/pages`,
         {
           $top: ONENOTE_SECTION_PAGE_BATCH,
-          $orderby: 'createdDateTime desc',
           $select: 'id,title,links,lastModifiedDateTime',
         },
       ),
@@ -372,15 +371,21 @@ async function listOneNotePagesViaSections(token: string): Promise<OneNotePageSu
 }
 
 async function listOneNotePagesFlat(token: string, limit: number): Promise<OneNotePageSummary[]> {
-  const pages = await graphGet<GraphOneNotePages>(
-    token,
-    buildGraphQuery('/me/onenote/pages', {
-      $top: limit,
-      $orderby: 'createdDateTime desc',
-      $select: 'id,title,links,lastModifiedDateTime',
-    }),
-  )
-  return pages.value ?? []
+  const path = buildGraphQuery('/me/onenote/pages', {
+    $top: limit,
+    $select: 'id,title,links,lastModifiedDateTime',
+  })
+  try {
+    const pages = await graphGet<GraphOneNotePages>(token, path)
+    return pages.value ?? []
+  } catch {
+    // Minimal query if $select combination is rejected for this account
+    const fallback = await graphGet<GraphOneNotePages>(
+      token,
+      buildGraphQuery('/me/onenote/pages', { $top: limit }),
+    )
+    return fallback.value ?? []
+  }
 }
 
 async function listOneNotePagesByBeaconTitle(
@@ -405,6 +410,9 @@ function formatOneNoteError(error: unknown): string {
   }
   if (message.includes('401')) {
     return 'OneNote sign-in expired — open Settings and sign in to Microsoft 365 again.'
+  }
+  if (message.includes('400')) {
+    return 'OneNote query failed — retrying with a simpler request. If this persists, sign out/in in Settings.'
   }
   return message
 }

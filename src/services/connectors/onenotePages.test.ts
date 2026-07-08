@@ -50,11 +50,10 @@ describe('buildGraphQuery', () => {
   it('keeps OData $ prefixes and encodes values', () => {
     const path = buildGraphQuery('/me/onenote/pages', {
       $top: 20,
-      $orderby: 'createdDateTime desc',
-      $select: 'id,title',
+      $select: 'id,title,lastModifiedDateTime',
     })
     expect(path).toBe(
-      '/me/onenote/pages?$top=20&$orderby=createdDateTime%20desc&$select=id%2Ctitle',
+      '/me/onenote/pages?$top=20&$select=id%2Ctitle%2ClastModifiedDateTime',
     )
   })
 })
