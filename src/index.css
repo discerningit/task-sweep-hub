@@ -515,6 +515,21 @@ code {
   color: var(--muted);
 }
 
+.m365-source-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.m365-source-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
 .m365-sweep-toggle {
   display: flex;
   align-items: center;

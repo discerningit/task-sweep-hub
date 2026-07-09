@@ -8,7 +8,12 @@ import {
   completeM365TodoTask,
   isM365SignedIn,
 } from './connectors/m365'
-import { resolveTaskM365AccountId } from './m365Accounts'
+import {
+  connectorSourceForTask,
+  isTaskSourceEnabledForAccount,
+  M365_CONNECTOR_SOURCE_LABELS,
+  resolveTaskM365AccountId,
+} from './m365Accounts'
 import type { AppSettings, Task } from '../types/task'
 
 export interface SyncResult {
@@ -18,10 +23,24 @@ export interface SyncResult {
 }
 
 /** Mark complete in hub and attempt source sync */
+function sourceDisabledResult(task: Task, settings: AppSettings): SyncResult | null {
+  if (isTaskSourceEnabledForAccount(task, settings)) return null
+  const connector = connectorSourceForTask(task.source)
+  const label = connector ? M365_CONNECTOR_SOURCE_LABELS[connector] : task.source
+  return {
+    success: true,
+    message: `Marked complete locally. ${label} is disabled for this account in Settings.`,
+    syncStatus: 'skipped',
+  }
+}
+
 export async function completeTask(
   task: Task,
   settings: AppSettings,
 ): Promise<SyncResult> {
+  const disabled = sourceDisabledResult(task, settings)
+  if (disabled) return disabled
+
   if (task.source === 'm365-todo') {
     return syncM365TodoComplete(task, settings)
   }

@@ -16,7 +16,7 @@ import {
   sweepM365OneNote,
   type OneNoteSweepResult,
 } from './connectors/m365'
-import { getSweepAccountIds } from './m365Accounts'
+import { getSweepAccountIdsForSource } from './m365Accounts'
 import { orchestrateExtraction, type ExtractionStatus } from './aiOrchestrator'
 import { deduplicateAgainstExisting } from './deduplication'
 import { scanForBeacons } from './beacon'
@@ -124,7 +124,7 @@ export async function runOneNoteSweep(): Promise<SweepResult> {
     throw new Error('Sign in to Microsoft 365 in Settings first.')
   }
 
-  const accountIds = getSweepAccountIds(settings)
+  const accountIds = getSweepAccountIdsForSource(settings, 'onenote')
   const onenoteResults: OneNoteSweepResult[] = []
   for (const homeAccountId of accountIds) {
     onenoteResults.push(await sweepM365OneNote(settings, { homeAccountId }))

@@ -9,7 +9,9 @@ import {
   isM365SignedIn,
 } from './connectors/m365'
 import {
+  findM365Account,
   getActiveM365AccountId,
+  isAccountSourceEnabled,
   M365_HOME_ACCOUNT_ID_KEY,
   resolveTaskM365AccountId,
   stampM365Metadata,
@@ -51,6 +53,24 @@ export async function pushNewTasksToPrimaryTool(
     }
   }
 
+  const pushAccountId = getActiveM365AccountId(settings)
+  const pushAccount = findM365Account(settings, pushAccountId)
+  if (!isAccountSourceEnabled(pushAccount, 'todo')) {
+    return {
+      tasks: tasks.map((t) =>
+        alreadyInMsTodo(t)
+          ? t
+          : {
+              ...t,
+              syncStatus: 'skipped',
+              syncMessage: 'Microsoft To Do is disabled for the push account in Settings.',
+            },
+      ),
+      pushedCount: 0,
+      failedCount: 0,
+    }
+  }
+
   let pushedCount = 0
   let failedCount = 0
   const updated: Task[] = []
@@ -62,7 +82,6 @@ export async function pushNewTasksToPrimaryTool(
     }
 
     try {
-      const pushAccountId = getActiveM365AccountId(settings)
       const created = await createM365TodoTask(settings, task, pushAccountId)
       const account = settings.m365Accounts?.find((a) => a.homeAccountId === pushAccountId)
       pushedCount++

@@ -39,7 +39,12 @@ const settings: AppSettings = {
   beaconMarker: '[TaskSweep-Beacon]',
   contextTags: [],
   m365ClientId: 'client-1',
-  m365Accounts: [{ homeAccountId: 'acc-1', username: 'me@contoso.com', label: 'Work' }],
+  m365Accounts: [{
+    homeAccountId: 'acc-1',
+    username: 'me@contoso.com',
+    label: 'Work',
+    enabledSources: ['todo'],
+  }],
   m365SweepAccountIds: ['acc-1'],
 }
 

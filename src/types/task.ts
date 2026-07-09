@@ -74,6 +74,9 @@ export interface Task {
   syncMessage?: string
 }
 
+/** Graph-backed connectors available per M365 account */
+export type M365ConnectorSource = 'todo' | 'outlook' | 'onenote'
+
 /** A signed-in Microsoft 365 account (personal or work) */
 export interface M365Account {
   /** MSAL home account ID — stable key across sessions */
@@ -83,6 +86,8 @@ export interface M365Account {
   tenantId?: string
   /** User label, e.g. "Personal" or "Work" */
   label?: string
+  /** Which Graph sources to sweep/sync for this account (default: smart by tenant) */
+  enabledSources?: M365ConnectorSource[]
 }
 
 /** User preferences — all local, no cloud required */

@@ -33,6 +33,7 @@ export {
   initM365,
   M365_SIGNED_IN_FLAG,
   refreshM365AccountSettings,
+  requestM365SourceAccess,
   signInM365,
   signOutM365,
   isM365SignedIn,

@@ -23,7 +23,10 @@ import {
   findM365Account,
   getActiveM365AccountId,
   getSweepAccountIds,
+  isAccountSourceEnabled,
+  M365_LOGIN_SCOPES,
   removeM365AccountFromSettings,
+  scopesForAccount,
   stampM365Metadata,
   syncM365AccountsToSettings,
 } from '../m365Accounts'
@@ -40,13 +43,6 @@ import {
   type OneNotePageSummary,
   type OneNoteSectionSummary,
 } from './onenotePages'
-
-const SCOPES = [
-  'User.Read',
-  'Tasks.ReadWrite',
-  'Mail.ReadWrite',
-  'Notes.Read',
-]
 
 /** Mirrored from Settings for auth bootstrap on page load */
 export const M365_CLIENT_ID_KEY = 'tasksweep_m365_client_id'
@@ -172,10 +168,35 @@ export async function signInM365(
   if (existing.length > 0 && !options?.addAccount) return null
 
   await msal.loginRedirect({
-    scopes: SCOPES,
+    scopes: [...M365_LOGIN_SCOPES],
     prompt: options?.addAccount || existing.length > 0 ? 'select_account' : undefined,
   })
   return null
+}
+
+/**
+ * Request Graph consent for an account's enabled sources (e.g. after enabling Outlook).
+ * Redirects to Microsoft if silent token acquisition fails.
+ */
+export async function requestM365SourceAccess(
+  settings: AppSettings,
+  homeAccountId: string,
+): Promise<boolean> {
+  if (!settings.m365ClientId) return false
+  const account = findM365Account(settings, homeAccountId)
+  const msal = getMsal(settings.m365ClientId)
+  await msal.initialize()
+  const msalAccount = getMsalAccount(msal, homeAccountId)
+  if (!msalAccount) return false
+
+  const scopes = scopesForAccount(account)
+  try {
+    await msal.acquireTokenSilent({ scopes, account: msalAccount })
+    return true
+  } catch {
+    await msal.acquireTokenRedirect({ scopes, account: msalAccount })
+    return false
+  }
 }
 
 export function isM365SignedIn(): boolean {
@@ -320,17 +341,20 @@ async function acquireToken(
   if (!settings.m365ClientId) return null
   const msal = getMsal(settings.m365ClientId)
   await msal.initialize()
-  const account = getMsalAccount(msal, homeAccountId ?? getActiveM365AccountId(settings))
-  if (!account) return null
+  const resolvedId = homeAccountId ?? getActiveM365AccountId(settings)
+  const msalAccount = getMsalAccount(msal, resolvedId)
+  if (!msalAccount) return null
+
+  const scopes = scopesForAccount(findM365Account(settings, resolvedId))
 
   try {
     const result = await msal.acquireTokenSilent({
-      scopes: SCOPES,
-      account,
+      scopes,
+      account: msalAccount,
     })
     return result.accessToken
   } catch {
-    await msal.acquireTokenRedirect({ scopes: SCOPES, account })
+    await msal.acquireTokenRedirect({ scopes, account: msalAccount })
     return null
   }
 }
@@ -699,42 +723,48 @@ async function sweepM365ForAccount(
   const now = new Date().toISOString()
   const accountFallback = account ?? { homeAccountId, username: 'unknown' }
 
-  try {
-    inputs.push(...(await sweepM365TodoOnly(settings, homeAccountId)))
-  } catch (e) {
-    console.warn(`M365 To Do sweep failed for ${homeAccountId}:`, e)
+  if (isAccountSourceEnabled(account, 'todo')) {
+    try {
+      inputs.push(...(await sweepM365TodoOnly(settings, homeAccountId)))
+    } catch (e) {
+      console.warn(`M365 To Do sweep failed for ${homeAccountId}:`, e)
+    }
   }
 
-  try {
-    const mail = await graphGet<GraphMessages>(
-      token,
-      '/me/messages?$top=30&$filter=flag/flagStatus eq \'flagged\'',
-    )
-    for (const msg of mail.value ?? []) {
-      inputs.push({
-        id: crypto.randomUUID(),
-        source: 'm365-outlook',
-        content: `${msg.subject}\n${msg.bodyPreview}`,
-        receivedAt: now,
-        sourceUrl: msg.webLink,
-        metadata: stampM365Metadata(
-          { id: msg.id, subject: msg.subject },
-          accountFallback,
-        ),
-      })
+  if (isAccountSourceEnabled(account, 'outlook')) {
+    try {
+      const mail = await graphGet<GraphMessages>(
+        token,
+        '/me/messages?$top=30&$filter=flag/flagStatus eq \'flagged\'',
+      )
+      for (const msg of mail.value ?? []) {
+        inputs.push({
+          id: crypto.randomUUID(),
+          source: 'm365-outlook',
+          content: `${msg.subject}\n${msg.bodyPreview}`,
+          receivedAt: now,
+          sourceUrl: msg.webLink,
+          metadata: stampM365Metadata(
+            { id: msg.id, subject: msg.subject },
+            accountFallback,
+          ),
+        })
+      }
+    } catch (e) {
+      console.warn(`M365 Outlook sweep failed for ${homeAccountId}:`, e)
     }
-  } catch (e) {
-    console.warn(`M365 Outlook sweep failed for ${homeAccountId}:`, e)
   }
 
-  try {
-    const onenote = await sweepM365OneNote(settings, { existingToken: token, homeAccountId })
-    inputs.push(...onenote.inputs)
-    if (onenote.pagesFound === 0) {
-      console.warn(`M365 OneNote sweep: no pages for ${homeAccountId}.`)
+  if (isAccountSourceEnabled(account, 'onenote')) {
+    try {
+      const onenote = await sweepM365OneNote(settings, { existingToken: token, homeAccountId })
+      inputs.push(...onenote.inputs)
+      if (onenote.pagesFound === 0) {
+        console.warn(`M365 OneNote sweep: no pages for ${homeAccountId}.`)
+      }
+    } catch (e) {
+      console.warn(`M365 OneNote sweep failed for ${homeAccountId}:`, e)
     }
-  } catch (e) {
-    console.warn(`M365 OneNote sweep failed for ${homeAccountId}:`, e)
   }
 
   return inputs

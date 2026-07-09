@@ -7,7 +7,7 @@
 
 import { getAllTasks, getSettings, saveTasks } from '../db/indexedDb'
 import { isM365SignedIn, sweepM365TodoOnly } from './connectors/m365'
-import { getSweepAccountIds } from './m365Accounts'
+import { getSweepAccountIdsForSource } from './m365Accounts'
 import { orchestrateExtraction } from './aiOrchestrator'
 import { deduplicateAgainstExisting } from './deduplication'
 import { reconcileToDoCompletions } from './primaryToolPush'
@@ -32,7 +32,7 @@ export async function runSyncFromTodo(): Promise<SyncFromTodoResult> {
   let newTaskCount = 0
 
   try {
-    const accountIds = getSweepAccountIds(settings)
+    const accountIds = getSweepAccountIdsForSource(settings, 'todo')
     const inputs = (
       await Promise.all(accountIds.map((id) => sweepM365TodoOnly(settings, id)))
     ).flat()

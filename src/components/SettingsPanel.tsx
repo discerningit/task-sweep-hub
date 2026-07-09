@@ -3,10 +3,16 @@ import {
   initM365,
   isM365SignedIn,
   refreshM365AccountSettings,
+  requestM365SourceAccess,
   signInM365,
   signOutM365,
 } from '../services/connectors'
-import type { AppSettings, M365Account, PrimaryTaskTool } from '../types/task'
+import {
+  ALL_M365_CONNECTOR_SOURCES,
+  getAccountEnabledSources,
+  M365_CONNECTOR_SOURCE_LABELS,
+} from '../services/m365Accounts'
+import type { AppSettings, M365Account, M365ConnectorSource, PrimaryTaskTool } from '../types/task'
 import { DeviceSetup } from './DeviceSetup'
 
 interface SettingsPanelProps {
@@ -24,11 +30,26 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
     setM365SignedIn(isM365SignedIn())
   }, [settings])
 
-  const save = () => {
-    onSave({
+  const save = async () => {
+    const next = {
       ...draft,
       setupCompleted: Boolean(draft.m365ClientId) || draft.setupCompleted,
-    })
+    }
+    onSave(next)
+
+    if (!next.m365ClientId) return
+    await initM365(next)
+    for (const account of next.m365Accounts ?? []) {
+      const prev = settings.m365Accounts?.find((a) => a.homeAccountId === account.homeAccountId)
+      const prevSources = prev ? getAccountEnabledSources(prev) : []
+      const nextSources = getAccountEnabledSources(account)
+      const added = nextSources.filter((s) => !prevSources.includes(s))
+      const needsConsent = added.some((s) => s === 'outlook' || s === 'onenote')
+      if (needsConsent) {
+        await requestM365SourceAccess(next, account.homeAccountId)
+        break
+      }
+    }
   }
 
   const handleImport = (imported: AppSettings) => {
@@ -86,6 +107,24 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
     })
   }
 
+  const toggleAccountSource = (homeAccountId: string, source: M365ConnectorSource) => {
+    setDraft({
+      ...draft,
+      m365Accounts: accounts.map((a) => {
+        if (a.homeAccountId !== homeAccountId) return a
+        const current = getAccountEnabledSources(a)
+        const enabled = current.includes(source)
+        const nextSources = enabled
+          ? current.filter((s) => s !== source)
+          : [...current, source]
+        return {
+          ...a,
+          enabledSources: nextSources.length ? nextSources : ['todo'],
+        }
+      }),
+    })
+  }
+
   return (
     <>
       <DeviceSetup settings={draft} onImport={handleImport} />
@@ -116,9 +155,9 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         Redirect URI must match this app&apos;s URL exactly (e.g. <code>http://localhost:5173</code> for dev, or your Cloudflare /
         GitHub Pages HTTPS URL after deploy — see DEPLOY.md).
         Permissions: Tasks.ReadWrite, Mail.ReadWrite, Notes.Read (OneNote), User.Read.
-        After adding Notes.Read, sign out and sign in again once.
-        Sign-in opens Microsoft in this same window (no popup).
-        After upgrading permissions, sign out and sign in again once.
+        Sign-in starts with To Do only; enable Outlook or OneNote per account below, then Save
+        to grant additional access when prompted.
+        Work accounts often allow <strong>To Do only</strong> — disable mail and notes for those.
       </p>
 
       <div className="m365-accounts">
@@ -136,6 +175,7 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
                   account.homeAccountId,
                 )}
                 onLabelChange={(label) => updateAccountLabel(account.homeAccountId, label)}
+                onToggleSource={(source) => toggleAccountSource(account.homeAccountId, source)}
                 onToggleSweep={() => toggleSweepAccount(account.homeAccountId)}
                 onSignOut={() => void handleM365SignOut(account.homeAccountId)}
               />
@@ -226,7 +266,7 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
       </label>
 
       <div className="settings-actions">
-        <button type="button" className="primary" onClick={save}>Save settings</button>
+        <button type="button" className="primary" onClick={() => void save()}>Save settings</button>
         <button type="button" className="secondary" onClick={onExport}>Export tasks CSV</button>
       </div>
     </section>
@@ -238,6 +278,7 @@ interface M365AccountRowProps {
   account: M365Account
   sweepEnabled: boolean
   onLabelChange: (label: string) => void
+  onToggleSource: (source: M365ConnectorSource) => void
   onToggleSweep: () => void
   onSignOut: () => void
 }
@@ -246,9 +287,12 @@ function M365AccountRow({
   account,
   sweepEnabled,
   onLabelChange,
+  onToggleSource,
   onToggleSweep,
   onSignOut,
 }: M365AccountRowProps) {
+  const enabledSources = getAccountEnabledSources(account)
+
   return (
     <li className="m365-account-row">
       <div className="m365-account-info">
@@ -260,6 +304,18 @@ function M365AccountRow({
           aria-label={`Label for ${account.username}`}
         />
         <span className="m365-account-email">{account.username}</span>
+        <div className="m365-source-toggles">
+          {ALL_M365_CONNECTOR_SOURCES.map((source) => (
+            <label key={source} className="m365-source-toggle">
+              <input
+                type="checkbox"
+                checked={enabledSources.includes(source)}
+                onChange={() => onToggleSource(source)}
+              />
+              {M365_CONNECTOR_SOURCE_LABELS[source]}
+            </label>
+          ))}
+        </div>
       </div>
       <label className="m365-sweep-toggle">
         <input type="checkbox" checked={sweepEnabled} onChange={onToggleSweep} />
