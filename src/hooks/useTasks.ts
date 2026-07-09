@@ -75,22 +75,31 @@ export function useTasks() {
   const markComplete = useCallback(
     async (task: Task) => {
       if (!settings) return
-      const updated: Task = {
+      const now = new Date().toISOString()
+      const optimistic: Task = {
         ...task,
         status: 'completed',
-        completedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        completedAt: now,
+        updatedAt: now,
       }
-      const result = await completeTask(updated, settings)
-      await saveTask({
-        ...updated,
-        syncStatus: result.syncStatus,
-        syncMessage: result.message,
-      })
-      setMessage(result.message)
-      await refresh()
+      setTasks((prev) => sortTasks(prev.map((t) => (t.id === task.id ? optimistic : t))))
+
+      try {
+        const result = await completeTask(optimistic, settings)
+        const saved: Task = {
+          ...optimistic,
+          syncStatus: result.syncStatus,
+          syncMessage: result.message,
+        }
+        await saveTask(saved)
+        setTasks((prev) => sortTasks(prev.map((t) => (t.id === saved.id ? saved : t))))
+        setMessage(result.message)
+      } catch {
+        setTasks((prev) => sortTasks(prev.map((t) => (t.id === task.id ? task : t))))
+        setMessage('Could not complete task — try again.')
+      }
     },
-    [settings, refresh],
+    [settings, sortTasks],
   )
 
   const markSnooze = useCallback(
@@ -98,18 +107,25 @@ export function useTasks() {
       if (!settings) return
       const until = new Date()
       until.setDate(until.getDate() + days)
-      const updated: Task = {
+      const now = new Date().toISOString()
+      const optimistic: Task = {
         ...task,
         status: 'snoozed',
         snoozedUntil: until.toISOString(),
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       }
-      await saveTask(updated)
-      const result = await snoozeTask(updated, until.toLocaleDateString(), settings)
-      setMessage(result.message)
-      await refresh()
+      setTasks((prev) => sortTasks(prev.map((t) => (t.id === task.id ? optimistic : t))))
+
+      try {
+        await saveTask(optimistic)
+        const result = await snoozeTask(optimistic, until.toLocaleDateString(), settings)
+        setMessage(result.message)
+      } catch {
+        setTasks((prev) => sortTasks(prev.map((t) => (t.id === task.id ? task : t))))
+        setMessage('Could not snooze task — try again.')
+      }
     },
-    [settings, refresh],
+    [settings, sortTasks],
   )
 
   const removeTask = useCallback(
