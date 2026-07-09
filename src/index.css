@@ -459,12 +459,82 @@ code {
   border-radius: 4px;
 }
 
+.m365-accounts {
+  margin-bottom: 1.25rem;
+}
+
+.m365-accounts h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--text-h);
+}
+
+.m365-account-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.m365-account-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+
+.m365-account-info {
+  flex: 1;
+  min-width: 10rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.m365-account-label {
+  font-weight: 600;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0.15rem 0;
+  color: var(--text-h);
+}
+
+.m365-account-label:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.m365-account-email {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.m365-sweep-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.m365-account-tag {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
 .m365-auth {
   display: flex;
   align-items: center;
   gap: 1rem;
   margin-bottom: 1rem;
   font-size: 0.9rem;
+  flex-wrap: wrap;
 }
 
 .footer {

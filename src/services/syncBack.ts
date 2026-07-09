@@ -8,6 +8,7 @@ import {
   completeM365TodoTask,
   isM365SignedIn,
 } from './connectors/m365'
+import { resolveTaskM365AccountId } from './m365Accounts'
 import type { AppSettings, Task } from '../types/task'
 
 export interface SyncResult {
@@ -55,6 +56,7 @@ async function syncM365TodoComplete(
   task: Task,
   settings: AppSettings,
 ): Promise<SyncResult> {
+  const homeAccountId = resolveTaskM365AccountId(task, settings)
   const taskId = task.sourceId ?? task.metadata?.id
   if (!taskId) {
     return {
@@ -73,7 +75,7 @@ async function syncM365TodoComplete(
   }
 
   try {
-    await completeM365TodoTask(settings, taskId, task.metadata?.listId)
+    await completeM365TodoTask(settings, taskId, task.metadata?.listId, homeAccountId)
     return {
       success: true,
       message: 'Completed in TaskSweep and Microsoft To Do.',
@@ -93,6 +95,7 @@ async function syncM365OutlookComplete(
   task: Task,
   settings: AppSettings,
 ): Promise<SyncResult> {
+  const homeAccountId = resolveTaskM365AccountId(task, settings)
   const messageId = task.sourceId ?? task.metadata?.id
   if (!messageId) {
     return {
@@ -111,7 +114,7 @@ async function syncM365OutlookComplete(
   }
 
   try {
-    await clearM365OutlookFlag(settings, messageId)
+    await clearM365OutlookFlag(settings, messageId, homeAccountId)
     return {
       success: true,
       message: 'Completed in TaskSweep and cleared Outlook flag.',

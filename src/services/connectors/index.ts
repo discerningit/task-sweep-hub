@@ -32,6 +32,7 @@ export {
   getM365AccessToken,
   initM365,
   M365_SIGNED_IN_FLAG,
+  refreshM365AccountSettings,
   signInM365,
   signOutM365,
   isM365SignedIn,

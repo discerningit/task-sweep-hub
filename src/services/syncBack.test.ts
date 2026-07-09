@@ -56,7 +56,7 @@ describe('syncBack', () => {
       }),
       settings,
     )
-    expect(completeM365TodoTask).toHaveBeenCalledWith(settings, 'todo-99', 'list-1')
+    expect(completeM365TodoTask).toHaveBeenCalledWith(settings, 'todo-99', 'list-1', undefined)
     expect(result.syncStatus).toBe('synced')
     expect(result.success).toBe(true)
   })
@@ -69,7 +69,7 @@ describe('syncBack', () => {
       }),
       settings,
     )
-    expect(clearM365OutlookFlag).toHaveBeenCalledWith(settings, 'msg-42')
+    expect(clearM365OutlookFlag).toHaveBeenCalledWith(settings, 'msg-42', undefined)
     expect(result.syncStatus).toBe('synced')
   })
 
@@ -101,6 +101,7 @@ describe('syncBack', () => {
       expect.objectContaining({ primaryTaskTool: 'ms-todo' }),
       'todo-pushed',
       'list-1',
+      undefined,
     )
     expect(result.syncStatus).toBe('synced')
   })

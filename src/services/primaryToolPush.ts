@@ -8,6 +8,12 @@ import {
   getM365TodoTaskStatus,
   isM365SignedIn,
 } from './connectors/m365'
+import {
+  getActiveM365AccountId,
+  M365_HOME_ACCOUNT_ID_KEY,
+  resolveTaskM365AccountId,
+  stampM365Metadata,
+} from './m365Accounts'
 import type { AppSettings, Task } from '../types/task'
 
 export interface PushResult {
@@ -56,18 +62,23 @@ export async function pushNewTasksToPrimaryTool(
     }
 
     try {
-      const created = await createM365TodoTask(settings, task)
+      const pushAccountId = getActiveM365AccountId(settings)
+      const created = await createM365TodoTask(settings, task, pushAccountId)
+      const account = settings.m365Accounts?.find((a) => a.homeAccountId === pushAccountId)
       pushedCount++
       updated.push({
         ...task,
         sourceId: created.id,
         sourceUrl: `https://to-do.office.com/tasks/id/${created.id}`,
-        metadata: {
-          ...task.metadata,
-          id: created.id,
-          listId: created.listId,
-          pushedToMsTodo: 'true',
-        },
+        metadata: stampM365Metadata(
+          {
+            ...task.metadata,
+            id: created.id,
+            listId: created.listId,
+            pushedToMsTodo: 'true',
+          },
+          account ?? { homeAccountId: pushAccountId ?? 'unknown', username: 'unknown' },
+        ),
         syncStatus: 'synced',
         syncMessage: 'Pushed to Microsoft To Do',
         updatedAt: new Date().toISOString(),
@@ -125,7 +136,14 @@ export async function reconcileToDoCompletions(
     if (!link) continue
 
     try {
-      const status = await getM365TodoTaskStatus(settings, link.id, link.listId)
+      const homeAccountId =
+        task.metadata?.[M365_HOME_ACCOUNT_ID_KEY] ?? resolveTaskM365AccountId(task, settings)
+      const status = await getM365TodoTaskStatus(
+        settings,
+        link.id,
+        link.listId,
+        homeAccountId,
+      )
       if (status !== 'completed') continue
 
       completedCount++

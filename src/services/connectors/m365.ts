@@ -18,7 +18,15 @@ import {
   type AccountInfo,
   type AuthenticationResult,
 } from '@azure/msal-browser'
-import type { AppSettings, Connector, RawInput, Task, TaskPriority } from '../../types/task'
+import type { AppSettings, Connector, M365Account, RawInput, Task, TaskPriority } from '../../types/task'
+import {
+  findM365Account,
+  getActiveM365AccountId,
+  getSweepAccountIds,
+  removeM365AccountFromSettings,
+  stampM365Metadata,
+  syncM365AccountsToSettings,
+} from '../m365Accounts'
 import { htmlToText } from './onenoteHtml'
 import {
   dedupePagesById,
@@ -46,7 +54,6 @@ export const M365_SIGNED_IN_FLAG = 'tasksweep_m365_signed_in'
 
 let msalInstance: PublicClientApplication | null = null
 let msalClientId: string | null = null
-let cachedAccount: AccountInfo | null = null
 
 /**
  * MSAL redirect URI must match Azure exactly.
@@ -76,10 +83,22 @@ function getMsal(clientId: string): PublicClientApplication {
   return msalInstance
 }
 
-function refreshCachedAccount(msal: PublicClientApplication): AccountInfo | null {
+function getMsalAccount(
+  msal: PublicClientApplication,
+  homeAccountId?: string,
+): AccountInfo | null {
   const accounts = msal.getAllAccounts()
-  cachedAccount = accounts[0] ?? null
-  return cachedAccount
+  if (accounts.length === 0) return null
+  if (!homeAccountId) return accounts[0]
+  return accounts.find((a) => a.homeAccountId === homeAccountId) ?? null
+}
+
+function resolveSweepAccount(
+  settings: AppSettings,
+  homeAccountId?: string,
+): M365Account | undefined {
+  const id = homeAccountId ?? getActiveM365AccountId(settings)
+  return id ? findM365Account(settings, id) : undefined
 }
 
 /** Keep client ID in localStorage so auth works immediately on page load */
@@ -103,13 +122,21 @@ export async function bootstrapM365Auth(): Promise<boolean> {
   await msal.initialize()
   const result = await msal.handleRedirectPromise()
   if (result?.account) {
-    cachedAccount = result.account
     sessionStorage.setItem(M365_SIGNED_IN_FLAG, '1')
     return true
   }
 
-  refreshCachedAccount(msal)
-  return false
+  return msal.getAllAccounts().length > 0
+}
+
+/** Sync MSAL account list into settings (call after sign-in redirect) */
+export async function refreshM365AccountSettings(
+  settings: AppSettings,
+): Promise<AppSettings> {
+  if (!settings.m365ClientId) return settings
+  const msal = getMsal(settings.m365ClientId)
+  await msal.initialize()
+  return syncM365AccountsToSettings(settings, msal.getAllAccounts())
 }
 
 export async function initM365(settings: AppSettings): Promise<boolean> {
@@ -118,15 +145,17 @@ export async function initM365(settings: AppSettings): Promise<boolean> {
   const msal = getMsal(settings.m365ClientId)
   await msal.initialize()
   await msal.handleRedirectPromise()
-  refreshCachedAccount(msal)
-  return cachedAccount !== null
+  return msal.getAllAccounts().length > 0
 }
 
 /**
  * Sign in via redirect — the page navigates to Microsoft and back.
  * No popup window.
  */
-export async function signInM365(settings: AppSettings): Promise<AuthenticationResult | null> {
+export async function signInM365(
+  settings: AppSettings,
+  options?: { addAccount?: boolean },
+): Promise<AuthenticationResult | null> {
   if (!settings.m365ClientId) {
     throw new Error('Add your M365 Client ID in Settings first')
   }
@@ -136,31 +165,52 @@ export async function signInM365(settings: AppSettings): Promise<AuthenticationR
 
   const redirectResult = await msal.handleRedirectPromise()
   if (redirectResult?.account) {
-    cachedAccount = redirectResult.account
     return redirectResult
   }
 
-  refreshCachedAccount(msal)
-  if (cachedAccount) return null
+  const existing = msal.getAllAccounts()
+  if (existing.length > 0 && !options?.addAccount) return null
 
-  await msal.loginRedirect({ scopes: SCOPES })
+  await msal.loginRedirect({
+    scopes: SCOPES,
+    prompt: options?.addAccount || existing.length > 0 ? 'select_account' : undefined,
+  })
   return null
 }
 
 export function isM365SignedIn(): boolean {
-  if (cachedAccount) return true
   const clientId = localStorage.getItem(M365_CLIENT_ID_KEY)
-  if (!clientId || !msalInstance) return false
-  return msalInstance.getAllAccounts().length > 0
+  if (!clientId) return false
+  if (msalInstance && msalClientId === clientId) {
+    return msalInstance.getAllAccounts().length > 0
+  }
+  return false
 }
 
-export async function signOutM365(settings: AppSettings): Promise<void> {
-  if (!settings.m365ClientId) return
+/** Sign out one M365 account, or all if homeAccountId omitted */
+export async function signOutM365(
+  settings: AppSettings,
+  homeAccountId?: string,
+): Promise<AppSettings> {
+  if (!settings.m365ClientId) return settings
   const msal = getMsal(settings.m365ClientId)
   await msal.initialize()
-  const account = cachedAccount ?? msal.getAllAccounts()[0]
-  cachedAccount = null
-  if (account) await msal.logoutRedirect({ account })
+
+  const accounts = homeAccountId
+    ? msal.getAllAccounts().filter((a) => a.homeAccountId === homeAccountId)
+    : msal.getAllAccounts()
+
+  if (accounts.length === 0) {
+    return homeAccountId
+      ? removeM365AccountFromSettings(settings, homeAccountId)
+      : { ...settings, m365Accounts: [], m365ActiveAccountId: undefined, m365SweepAccountIds: [] }
+  }
+
+  // logoutRedirect navigates away — settings cleanup happens on return via refreshM365AccountSettings
+  await msal.logoutRedirect({ account: accounts[0] })
+  return homeAccountId
+    ? removeM365AccountFromSettings(settings, homeAccountId)
+    : settings
 }
 
 interface GraphErrorBody {
@@ -256,15 +306,21 @@ async function getDefaultTodoListId(token: string): Promise<string> {
 }
 
 /** Get a Graph access token (exported for sync-back) */
-export async function getM365AccessToken(settings: AppSettings): Promise<string | null> {
-  return acquireToken(settings)
+export async function getM365AccessToken(
+  settings: AppSettings,
+  homeAccountId?: string,
+): Promise<string | null> {
+  return acquireToken(settings, homeAccountId)
 }
 
-async function acquireToken(settings: AppSettings): Promise<string | null> {
+async function acquireToken(
+  settings: AppSettings,
+  homeAccountId?: string,
+): Promise<string | null> {
   if (!settings.m365ClientId) return null
   const msal = getMsal(settings.m365ClientId)
   await msal.initialize()
-  const account = cachedAccount ?? refreshCachedAccount(msal)
+  const account = getMsalAccount(msal, homeAccountId ?? getActiveM365AccountId(settings))
   if (!account) return null
 
   try {
@@ -517,9 +573,13 @@ async function readOneNotePageText(token: string, pageId: string): Promise<strin
   }
 }
 
-/** Pull open Microsoft To Do tasks only (no Outlook) */
-export async function sweepM365TodoOnly(settings: AppSettings): Promise<RawInput[]> {
-  const token = await acquireToken(settings)
+/** Pull open Microsoft To Do tasks only (no Outlook) from one account */
+export async function sweepM365TodoOnly(
+  settings: AppSettings,
+  homeAccountId?: string,
+): Promise<RawInput[]> {
+  const account = resolveSweepAccount(settings, homeAccountId)
+  const token = await acquireToken(settings, account?.homeAccountId)
   if (!token) return []
 
   const inputs: RawInput[] = []
@@ -540,13 +600,19 @@ export async function sweepM365TodoOnly(settings: AppSettings): Promise<RawInput
           content: [task.title, task.body?.content ?? ''].filter(Boolean).join('\n'),
           receivedAt: now,
           sourceUrl: `https://to-do.office.com/tasks/id/${task.id}`,
-          metadata: {
-            id: task.id,
-            listId: list.id,
-            listName: list.displayName,
-            dueDate: task.dueDateTime?.dateTime ?? '',
-            importance: task.importance ?? 'normal',
-          },
+          metadata: stampM365Metadata(
+            {
+              id: task.id,
+              listId: list.id,
+              listName: list.displayName,
+              dueDate: task.dueDateTime?.dateTime ?? '',
+              importance: task.importance ?? 'normal',
+            },
+            account ?? {
+              homeAccountId: homeAccountId ?? 'unknown',
+              username: 'unknown',
+            },
+          ),
         })
       }
     }
@@ -558,12 +624,15 @@ export async function sweepM365TodoOnly(settings: AppSettings): Promise<RawInput
   return inputs
 }
 
-/** Pull recent OneNote pages and extract text for task mining */
+/** Pull recent OneNote pages and extract text for task mining from one account */
 export async function sweepM365OneNote(
   settings: AppSettings,
-  existingToken?: string,
+  options?: { existingToken?: string; homeAccountId?: string },
 ): Promise<OneNoteSweepResult> {
-  const token = existingToken ?? (await acquireToken(settings))
+  const homeAccountId = options?.homeAccountId
+  const account = resolveSweepAccount(settings, homeAccountId)
+  const token =
+    options?.existingToken ?? (await acquireToken(settings, account?.homeAccountId))
   if (!token) return { inputs: [], pagesFound: 0, pagesImported: 0 }
 
   const inputs: RawInput[] = []
@@ -587,12 +656,18 @@ export async function sweepM365OneNote(
         content: `${title}\n${text}`.trim(),
         receivedAt: now,
         sourceUrl: page.links?.oneNoteWebUrl?.href,
-        metadata: {
-          id: page.id,
-          subject: title,
-          lastModified: page.lastModifiedDateTime ?? '',
-          ...(page.sectionName ? { sectionName: page.sectionName } : {}),
-        },
+        metadata: stampM365Metadata(
+          {
+            id: page.id,
+            subject: title,
+            lastModified: page.lastModifiedDateTime ?? '',
+            ...(page.sectionName ? { sectionName: page.sectionName } : {}),
+          },
+          account ?? {
+            homeAccountId: homeAccountId ?? 'unknown',
+            username: 'unknown',
+          },
+        ),
       })
     } catch (e) {
       console.warn(`OneNote page ${page.id} skipped:`, e)
@@ -611,18 +686,23 @@ export async function sweepM365OneNote(
   return result
 }
 
-/** Pull To Do tasks and flagged emails via Graph */
-export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
-  const token = await acquireToken(settings)
+/** Pull To Do, flagged Outlook mail, and OneNote from one M365 account */
+async function sweepM365ForAccount(
+  settings: AppSettings,
+  homeAccountId: string,
+): Promise<RawInput[]> {
+  const account = resolveSweepAccount(settings, homeAccountId)
+  const token = await acquireToken(settings, homeAccountId)
   if (!token) return []
 
   const inputs: RawInput[] = []
   const now = new Date().toISOString()
+  const accountFallback = account ?? { homeAccountId, username: 'unknown' }
 
   try {
-    inputs.push(...(await sweepM365TodoOnly(settings)))
+    inputs.push(...(await sweepM365TodoOnly(settings, homeAccountId)))
   } catch (e) {
-    console.warn('M365 To Do sweep failed:', e)
+    console.warn(`M365 To Do sweep failed for ${homeAccountId}:`, e)
   }
 
   try {
@@ -637,23 +717,38 @@ export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
         content: `${msg.subject}\n${msg.bodyPreview}`,
         receivedAt: now,
         sourceUrl: msg.webLink,
-        metadata: { id: msg.id, subject: msg.subject },
+        metadata: stampM365Metadata(
+          { id: msg.id, subject: msg.subject },
+          accountFallback,
+        ),
       })
     }
   } catch (e) {
-    console.warn('M365 Outlook sweep failed:', e)
+    console.warn(`M365 Outlook sweep failed for ${homeAccountId}:`, e)
   }
 
   try {
-    const onenote = await sweepM365OneNote(settings, token)
+    const onenote = await sweepM365OneNote(settings, { existingToken: token, homeAccountId })
     inputs.push(...onenote.inputs)
     if (onenote.pagesFound === 0) {
-      console.warn('M365 OneNote sweep: no pages discovered. Check Notes.Read.All permission and sign-in.')
+      console.warn(`M365 OneNote sweep: no pages for ${homeAccountId}.`)
     }
   } catch (e) {
-    console.warn('M365 OneNote sweep failed:', e)
+    console.warn(`M365 OneNote sweep failed for ${homeAccountId}:`, e)
   }
 
+  return inputs
+}
+
+/** Pull To Do tasks and flagged emails from all enabled M365 accounts */
+export async function sweepM365(settings: AppSettings): Promise<RawInput[]> {
+  const accountIds = getSweepAccountIds(settings)
+  if (accountIds.length === 0) return []
+
+  const inputs: RawInput[] = []
+  for (const homeAccountId of accountIds) {
+    inputs.push(...(await sweepM365ForAccount(settings, homeAccountId)))
+  }
   return inputs
 }
 
@@ -680,8 +775,9 @@ async function resolveTodoListId(
 export async function createM365TodoTask(
   settings: AppSettings,
   task: Pick<Task, 'title' | 'notes' | 'dueDate' | 'priority' | 'tags'>,
+  homeAccountId?: string,
 ): Promise<{ id: string; listId: string }> {
-  const token = await acquireToken(settings)
+  const token = await acquireToken(settings, homeAccountId ?? getActiveM365AccountId(settings))
   if (!token) throw new Error('Not signed in to Microsoft 365')
 
   const listId = await getDefaultTodoListId(token)
@@ -713,8 +809,9 @@ export async function getM365TodoTaskStatus(
   settings: AppSettings,
   taskId: string,
   listId?: string,
+  homeAccountId?: string,
 ): Promise<string | null> {
-  const token = await acquireToken(settings)
+  const token = await acquireToken(settings, homeAccountId)
   if (!token) return null
 
   const resolvedListId = await resolveTodoListId(token, taskId, listId)
@@ -730,8 +827,9 @@ export async function completeM365TodoTask(
   settings: AppSettings,
   taskId: string,
   listId?: string,
+  homeAccountId?: string,
 ): Promise<void> {
-  const token = await acquireToken(settings)
+  const token = await acquireToken(settings, homeAccountId)
   if (!token) throw new Error('Not signed in to Microsoft 365')
 
   const resolvedListId = await resolveTodoListId(token, taskId, listId)
@@ -744,8 +842,9 @@ export async function completeM365TodoTask(
 export async function clearM365OutlookFlag(
   settings: AppSettings,
   messageId: string,
+  homeAccountId?: string,
 ): Promise<void> {
-  const token = await acquireToken(settings)
+  const token = await acquireToken(settings, homeAccountId)
   if (!token) throw new Error('Not signed in to Microsoft 365')
 
   await graphPatch(token, `/me/messages/${messageId}`, {

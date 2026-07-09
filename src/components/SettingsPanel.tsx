@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   initM365,
   isM365SignedIn,
+  refreshM365AccountSettings,
   signInM365,
   signOutM365,
 } from '../services/connectors'
-import type { AppSettings, PrimaryTaskTool } from '../types/task'
+import type { AppSettings, M365Account, PrimaryTaskTool } from '../types/task'
 import { DeviceSetup } from './DeviceSetup'
 
 interface SettingsPanelProps {
@@ -16,10 +17,11 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps) {
   const [draft, setDraft] = useState(settings)
-  const [m365Status, setM365Status] = useState(isM365SignedIn() ? 'signed-in' : 'signed-out')
+  const [m365SignedIn, setM365SignedIn] = useState(isM365SignedIn())
 
   useEffect(() => {
-    setM365Status(isM365SignedIn() ? 'signed-in' : 'signed-out')
+    setDraft(settings)
+    setM365SignedIn(isM365SignedIn())
   }, [settings])
 
   const save = () => {
@@ -34,19 +36,54 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
     onSave(imported)
   }
 
-  const handleM365SignIn = async () => {
-    onSave(draft)
-    await initM365(draft)
-    const result = await signInM365(draft)
-    if (result || isM365SignedIn()) {
-      setM365Status('signed-in')
-    }
-    // loginRedirect navigates away — page reloads when Microsoft sends you back
+  const syncAccountsFromMsal = async (base: AppSettings): Promise<AppSettings> => {
+    if (!base.m365ClientId || !isM365SignedIn()) return base
+    return refreshM365AccountSettings(base)
   }
 
-  const handleM365SignOut = async () => {
-    await signOutM365(draft)
-    setM365Status('signed-out')
+  const handleM365SignIn = async (addAccount = false) => {
+    await initM365(draft)
+    const saved = await syncAccountsFromMsal(draft)
+    setDraft(saved)
+    onSave(saved)
+    const result = await signInM365(saved, { addAccount })
+    if (result || isM365SignedIn()) {
+      const refreshed = await syncAccountsFromMsal(saved)
+      setDraft(refreshed)
+      onSave(refreshed)
+      setM365SignedIn(true)
+    }
+  }
+
+  const handleM365SignOut = async (homeAccountId?: string) => {
+    const next = await signOutM365(draft, homeAccountId)
+    setDraft(next)
+    onSave(next)
+    setM365SignedIn(isM365SignedIn())
+  }
+
+  const accounts = draft.m365Accounts ?? []
+
+  const toggleSweepAccount = (homeAccountId: string) => {
+    const signedIn = accounts.map((a) => a.homeAccountId)
+    const current = draft.m365SweepAccountIds ?? signedIn
+    const enabled = current.includes(homeAccountId)
+    const next = enabled
+      ? current.filter((id) => id !== homeAccountId)
+      : [...current, homeAccountId]
+    setDraft({
+      ...draft,
+      m365SweepAccountIds: next.length ? next : signedIn,
+    })
+  }
+
+  const updateAccountLabel = (homeAccountId: string, label: string) => {
+    setDraft({
+      ...draft,
+      m365Accounts: accounts.map((a) =>
+        a.homeAccountId === homeAccountId ? { ...a, label: label || undefined } : a,
+      ),
+    })
   }
 
   return (
@@ -73,8 +110,10 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         />
       </label>
       <p className="hint">
-        Register at Azure Portal → App registrations. Redirect URI must match this app&apos;s
-        URL exactly (e.g. <code>http://localhost:5173</code> for dev, or your Cloudflare /
+        Register at Azure Portal → App registrations. Choose <strong>Accounts in any
+        organizational directory and personal Microsoft accounts</strong> so one app works
+        for both personal and work sign-in.
+        Redirect URI must match this app&apos;s URL exactly (e.g. <code>http://localhost:5173</code> for dev, or your Cloudflare /
         GitHub Pages HTTPS URL after deploy — see DEPLOY.md).
         Permissions: Tasks.ReadWrite, Mail.ReadWrite, Notes.Read (OneNote), User.Read.
         After adding Notes.Read, sign out and sign in again once.
@@ -82,16 +121,62 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         After upgrading permissions, sign out and sign in again once.
       </p>
 
-      <div className="m365-auth">
-        <span>Status: {m365Status === 'signed-in' ? 'Signed in' : 'Not signed in'}</span>
-        {m365Status === 'signed-in' ? (
-          <button type="button" onClick={handleM365SignOut}>Sign out M365</button>
-        ) : (
-          <button type="button" onClick={handleM365SignIn} disabled={!draft.m365ClientId}>
-            Sign in to Microsoft 365
-          </button>
+      <div className="m365-accounts">
+        <h3>Microsoft 365 accounts</h3>
+        {!m365SignedIn && (
+          <p className="hint">Not signed in. Add your Client ID above, then sign in.</p>
         )}
+        {accounts.length > 0 && (
+          <ul className="m365-account-list">
+            {accounts.map((account) => (
+              <M365AccountRow
+                key={account.homeAccountId}
+                account={account}
+                sweepEnabled={(draft.m365SweepAccountIds ?? accounts.map((a) => a.homeAccountId)).includes(
+                  account.homeAccountId,
+                )}
+                onLabelChange={(label) => updateAccountLabel(account.homeAccountId, label)}
+                onToggleSweep={() => toggleSweepAccount(account.homeAccountId)}
+                onSignOut={() => void handleM365SignOut(account.homeAccountId)}
+              />
+            ))}
+          </ul>
+        )}
+        <div className="m365-auth">
+          {!draft.m365ClientId ? (
+            <span>Add Client ID to enable sign-in</span>
+          ) : accounts.length === 0 ? (
+            <button type="button" onClick={() => void handleM365SignIn(false)}>
+              Sign in to Microsoft 365
+            </button>
+          ) : (
+            <button type="button" onClick={() => void handleM365SignIn(true)}>
+              Add another account
+            </button>
+          )}
+          {accounts.length > 1 && (
+            <button type="button" className="danger" onClick={() => void handleM365SignOut()}>
+              Sign out all
+            </button>
+          )}
+        </div>
       </div>
+
+      {accounts.length > 0 && draft.primaryTaskTool === 'ms-todo' && (
+        <label className="field">
+          Push new tasks to To Do account
+          <select
+            value={draft.m365ActiveAccountId ?? accounts[0]?.homeAccountId ?? ''}
+            onChange={(e) => setDraft({ ...draft, m365ActiveAccountId: e.target.value })}
+          >
+            {accounts.map((a) => (
+              <option key={a.homeAccountId} value={a.homeAccountId}>
+                {a.label ?? a.username}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label className="field">
         Primary task tool (push new tasks, sync done both ways)
@@ -146,5 +231,43 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
       </div>
     </section>
     </>
+  )
+}
+
+interface M365AccountRowProps {
+  account: M365Account
+  sweepEnabled: boolean
+  onLabelChange: (label: string) => void
+  onToggleSweep: () => void
+  onSignOut: () => void
+}
+
+function M365AccountRow({
+  account,
+  sweepEnabled,
+  onLabelChange,
+  onToggleSweep,
+  onSignOut,
+}: M365AccountRowProps) {
+  return (
+    <li className="m365-account-row">
+      <div className="m365-account-info">
+        <input
+          className="m365-account-label"
+          value={account.label ?? ''}
+          placeholder={account.username}
+          onChange={(e) => onLabelChange(e.target.value)}
+          aria-label={`Label for ${account.username}`}
+        />
+        <span className="m365-account-email">{account.username}</span>
+      </div>
+      <label className="m365-sweep-toggle">
+        <input type="checkbox" checked={sweepEnabled} onChange={onToggleSweep} />
+        Sweep
+      </label>
+      <button type="button" className="danger" onClick={onSignOut}>
+        Sign out
+      </button>
+    </li>
   )
 }

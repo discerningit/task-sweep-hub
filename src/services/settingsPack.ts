@@ -16,6 +16,8 @@ export interface SettingsPack {
   settings: Pick<
     AppSettings,
     | 'm365ClientId'
+    | 'm365ActiveAccountId'
+    | 'm365SweepAccountIds'
     | 'beaconMarker'
     | 'contextTags'
     | 'primaryTaskTool'
@@ -32,6 +34,8 @@ export function createSettingsPack(settings: AppSettings): SettingsPack {
     exportedAt: new Date().toISOString(),
     settings: {
       m365ClientId: settings.m365ClientId,
+      m365ActiveAccountId: settings.m365ActiveAccountId,
+      m365SweepAccountIds: settings.m365SweepAccountIds,
       beaconMarker: settings.beaconMarker,
       contextTags: settings.contextTags,
       primaryTaskTool: settings.primaryTaskTool,

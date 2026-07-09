@@ -13,7 +13,12 @@ import {
 } from '../db/indexedDb'
 import type { AppSettings, Task } from '../types/task'
 import { completeTask, snoozeTask } from '../services/syncBack'
-import { initM365, M365_SIGNED_IN_FLAG, syncM365ClientId } from '../services/connectors'
+import {
+  initM365,
+  M365_SIGNED_IN_FLAG,
+  refreshM365AccountSettings,
+  syncM365ClientId,
+} from '../services/connectors'
 import { reconcileToDoCompletions } from '../services/primaryToolPush'
 
 export function useTasks() {
@@ -34,9 +39,17 @@ export function useTasks() {
       setMessage('Signed in to Microsoft 365')
     }
 
-    let tasksToShow = allTasks
+    let settingsToUse = appSettings
     if (appSettings.m365ClientId) {
-      const reconcile = await reconcileToDoCompletions(allTasks, appSettings)
+      settingsToUse = await refreshM365AccountSettings(appSettings)
+      if (JSON.stringify(settingsToUse.m365Accounts) !== JSON.stringify(appSettings.m365Accounts)) {
+        await saveSettings(settingsToUse)
+      }
+    }
+
+    let tasksToShow = allTasks
+    if (settingsToUse.m365ClientId) {
+      const reconcile = await reconcileToDoCompletions(allTasks, settingsToUse)
       if (reconcile.updated.length > 0) {
         await saveTasks(reconcile.updated)
         const completedIds = new Set(reconcile.updated.map((t) => t.id))
@@ -50,7 +63,7 @@ export function useTasks() {
     }
 
     setTasks(tasksToShow.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
-    setSettings(appSettings)
+    setSettings(settingsToUse)
     setLoading(false)
   }, [])
 

@@ -1,4 +1,5 @@
 import type { Task } from '../types/task'
+import { M365_ACCOUNT_LABEL_KEY, M365_USERNAME_KEY } from '../services/m365Accounts'
 
 interface TaskListProps {
   tasks: Task[]
@@ -50,6 +51,11 @@ export function TaskList({
               <div className="task-meta">
                 {task.dueDate && <span className="due">Due {task.dueDate}</span>}
                 <span className="source">{task.source}</span>
+                {m365AccountLabel(task) && (
+                  <span className="tag m365-account-tag" title={task.metadata?.[M365_USERNAME_KEY]}>
+                    {m365AccountLabel(task)}
+                  </span>
+                )}
                 {task.tags.map((tag) => (
                   <span key={tag} className="tag">{tag}</span>
                 ))}
@@ -107,6 +113,10 @@ export function TaskList({
 function priorityIcon(p: Task['priority']): string {
   const map = { urgent: '!!!', high: '!!', normal: '•', low: '·' }
   return map[p]
+}
+
+function m365AccountLabel(task: Task): string | undefined {
+  return task.metadata?.[M365_ACCOUNT_LABEL_KEY] ?? task.metadata?.[M365_USERNAME_KEY]
 }
 
 function syncLabel(status: NonNullable<Task['syncStatus']>): string {

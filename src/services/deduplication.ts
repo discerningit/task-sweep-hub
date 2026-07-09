@@ -23,8 +23,11 @@ export function hashString(input: string): string {
   return (hash >>> 0).toString(36)
 }
 
-export function buildContentHash(task: Pick<ExtractedTask, 'title' | 'dueDate'>): string {
-  const key = `${normalize(task.title)}|${task.dueDate ?? ''}`
+export function buildContentHash(
+  task: Pick<ExtractedTask, 'title' | 'dueDate' | 'metadata'>,
+): string {
+  const accountId = task.metadata?.m365HomeAccountId ?? ''
+  const key = `${normalize(task.title)}|${task.dueDate ?? ''}|${accountId}`
   return hashString(key)
 }
 

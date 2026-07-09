@@ -16,6 +16,7 @@ import {
   sweepM365OneNote,
   type OneNoteSweepResult,
 } from './connectors/m365'
+import { getSweepAccountIds } from './m365Accounts'
 import { orchestrateExtraction, type ExtractionStatus } from './aiOrchestrator'
 import { deduplicateAgainstExisting } from './deduplication'
 import { scanForBeacons } from './beacon'
@@ -123,8 +124,22 @@ export async function runOneNoteSweep(): Promise<SweepResult> {
     throw new Error('Sign in to Microsoft 365 in Settings first.')
   }
 
-  const onenote = await sweepM365OneNote(settings)
-  const sources = onenote.inputs.length > 0 ? ['OneNote'] : []
+  const accountIds = getSweepAccountIds(settings)
+  const onenoteResults: OneNoteSweepResult[] = []
+  for (const homeAccountId of accountIds) {
+    onenoteResults.push(await sweepM365OneNote(settings, { homeAccountId }))
+  }
 
-  return finalizeSweep(onenote.inputs, sources, settings, onenote)
+  const inputs = onenoteResults.flatMap((r) => r.inputs)
+  const onenote: OneNoteSweepResult = {
+    inputs,
+    pagesFound: onenoteResults.reduce((sum, r) => sum + r.pagesFound, 0),
+    pagesImported: inputs.length,
+    sectionsScanned: onenoteResults.reduce((sum, r) => sum + (r.sectionsScanned ?? 0), 0),
+    detail: onenoteResults.map((r) => r.detail).filter(Boolean).join(' '),
+    error: onenoteResults.find((r) => r.error)?.error,
+  }
+  const sources = inputs.length > 0 ? ['OneNote'] : []
+
+  return finalizeSweep(inputs, sources, settings, onenote)
 }

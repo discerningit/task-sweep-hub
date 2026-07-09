@@ -74,6 +74,17 @@ export interface Task {
   syncMessage?: string
 }
 
+/** A signed-in Microsoft 365 account (personal or work) */
+export interface M365Account {
+  /** MSAL home account ID — stable key across sessions */
+  homeAccountId: string
+  username: string
+  name?: string
+  tenantId?: string
+  /** User label, e.g. "Personal" or "Work" */
+  label?: string
+}
+
 /** User preferences — all local, no cloud required */
 export interface AppSettings {
   /** Which AI providers the user has enabled */
@@ -82,6 +93,12 @@ export interface AppSettings {
   primaryAi: AiProviderId
   /** M365 tenant/client config (optional) */
   m365ClientId?: string
+  /** Signed-in M365 accounts discovered via MSAL */
+  m365Accounts?: M365Account[]
+  /** Default account for pushing new tasks to Microsoft To Do */
+  m365ActiveAccountId?: string
+  /** Which accounts to include in M365 sweeps (default: all signed-in) */
+  m365SweepAccountIds?: string[]
   /** xAI Grok API key (optional, stored locally on device) */
   grokApiKey?: string
   /** Where completed tasks should sync when possible */
