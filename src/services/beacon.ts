@@ -52,6 +52,7 @@ function suggestConnector(source: TaskSource): string {
   const map: Partial<Record<TaskSource, string>> = {
     paste: 'Keep pasting from this app — or try File Upload for exports',
     file: 'File connector works — consider M365 if this came from Outlook',
+    'proton-mail': 'Proton Mail connector — export .eml files and use Sweep Proton Mail',
     'm365-todo': 'M365 To Do connector is active — run a full M365 sweep',
     'm365-outlook': 'M365 Outlook connector — enable Graph API in Settings',
     'm365-onenote': 'M365 OneNote — notes often hold hidden tasks',

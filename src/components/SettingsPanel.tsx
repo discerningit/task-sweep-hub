@@ -202,6 +202,25 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         </div>
       </div>
 
+      <div className="proton-settings">
+        <h3>Proton Mail</h3>
+        <label className="field inline-check">
+          <input
+            type="checkbox"
+            checked={draft.protonMailEnabled !== false}
+            onChange={(e) => setDraft({ ...draft, protonMailEnabled: e.target.checked })}
+          />
+          Enable Proton Mail connector
+        </label>
+        <p className="hint">
+          Proton does not offer a browser API like Microsoft Graph. Use <strong>Sweep Proton Mail</strong>{' '}
+          on the Tasks tab with <code>.eml</code> files exported from Proton Mail.
+          In Proton: open a message → <strong>More</strong> → <strong>Export</strong> → save as{' '}
+          <code>.eml</code>, or bulk-export from Settings → Import/Export.
+          Tasks are tagged <code>proton-mail</code> and stay in TaskSweep (no live sync-back).
+        </p>
+      </div>
+
       {accounts.length > 0 && draft.primaryTaskTool === 'ms-todo' && (
         <label className="field">
           Push new tasks to To Do account

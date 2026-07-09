@@ -18,6 +18,7 @@ export interface SettingsPack {
     | 'm365ClientId'
     | 'm365ActiveAccountId'
     | 'm365SweepAccountIds'
+    | 'protonMailEnabled'
     | 'beaconMarker'
     | 'contextTags'
     | 'primaryTaskTool'
@@ -36,6 +37,7 @@ export function createSettingsPack(settings: AppSettings): SettingsPack {
       m365ClientId: settings.m365ClientId,
       m365ActiveAccountId: settings.m365ActiveAccountId,
       m365SweepAccountIds: settings.m365SweepAccountIds,
+      protonMailEnabled: settings.protonMailEnabled,
       beaconMarker: settings.beaconMarker,
       contextTags: settings.contextTags,
       primaryTaskTool: settings.primaryTaskTool,

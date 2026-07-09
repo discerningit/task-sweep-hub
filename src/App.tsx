@@ -248,6 +248,7 @@ function App() {
         {tab === 'tasks' && (
           <>
             <InputArea
+              settings={settings}
               onSweep={handleSweep}
               onSweepOneNote={() => void handleSweepOneNote()}
               sweeping={sweeping}

@@ -11,18 +11,28 @@ import type { AppSettings, Connector } from '../../types/task'
 import { pasteConnector } from './paste'
 import { fileUploadConnector } from './fileUpload'
 import { createM365Connector } from './m365'
+import { createProtonMailConnector } from './protonMail'
 
 export function getAllConnectors(settings: AppSettings): Connector[] {
   return [
     pasteConnector,
     fileUploadConnector,
+    createProtonMailConnector(() => settings),
     createM365Connector(() => settings),
-    // Future: protonMailConnector, iosExportConnector, jiraConnector
+    // Future: iosExportConnector, jiraConnector
   ]
+}
+
+/** Connector IDs used by the Sweep all sources button */
+export function getDefaultSweepConnectorIds(settings: AppSettings): string[] {
+  const ids = ['paste', 'file', 'm365']
+  if (settings.protonMailEnabled !== false) ids.push('proton-mail')
+  return ids
 }
 
 export { setPasteContent, clearPasteContent } from './paste'
 export { setUploadFiles, clearUploadFiles } from './fileUpload'
+export { setProtonMailFiles, clearProtonMailFiles } from './protonMail'
 export {
   bootstrapM365Auth,
   clearM365OutlookFlag,

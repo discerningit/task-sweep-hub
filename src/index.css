@@ -459,14 +459,27 @@ code {
   border-radius: 4px;
 }
 
+.proton-settings,
 .m365-accounts {
   margin-bottom: 1.25rem;
 }
 
+.proton-settings h3,
 .m365-accounts h3 {
   margin: 0 0 0.5rem;
   font-size: 1rem;
   color: var(--text-h);
+}
+
+.field.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.m365-accounts {
+  margin-bottom: 1.25rem;
 }
 
 .m365-account-list {

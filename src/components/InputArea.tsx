@@ -1,15 +1,32 @@
+import { useRef } from 'react'
 import { useState } from 'react'
-import { setPasteContent, setUploadFiles } from '../services/connectors'
+import {
+  getDefaultSweepConnectorIds,
+  setPasteContent,
+  setProtonMailFiles,
+  setUploadFiles,
+} from '../services/connectors'
+import type { AppSettings } from '../types/task'
 
 interface InputAreaProps {
+  settings: AppSettings
   onSweep: (connectorIds: string[]) => void
   onSweepOneNote?: () => void
   sweeping: boolean
   m365Ready?: boolean
 }
 
-export function InputArea({ onSweep, onSweepOneNote, sweeping, m365Ready }: InputAreaProps) {
+export function InputArea({
+  settings,
+  onSweep,
+  onSweepOneNote,
+  sweeping,
+  m365Ready,
+}: InputAreaProps) {
   const [text, setText] = useState('')
+  const protonInputRef = useRef<HTMLInputElement>(null)
+
+  const protonEnabled = settings.protonMailEnabled !== false
 
   const handleSweepPaste = () => {
     if (!text.trim()) return
@@ -22,6 +39,14 @@ export function InputArea({ onSweep, onSweepOneNote, sweeping, m365Ready }: Inpu
     if (e.target.files?.length) {
       setUploadFiles(e.target.files)
       onSweep(['file'])
+      e.target.value = ''
+    }
+  }
+
+  const handleProtonFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) {
+      setProtonMailFiles(e.target.files)
+      onSweep(['proton-mail'])
       e.target.value = ''
     }
   }
@@ -57,10 +82,31 @@ export function InputArea({ onSweep, onSweepOneNote, sweeping, m365Ready }: Inpu
             hidden
           />
         </label>
+        {protonEnabled && (
+          <>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => protonInputRef.current?.click()}
+              disabled={sweeping}
+              title="Select .eml files exported from Proton Mail"
+            >
+              {sweeping ? 'Sweeping…' : 'Sweep Proton Mail'}
+            </button>
+            <input
+              ref={protonInputRef}
+              type="file"
+              accept=".eml,message/rfc822"
+              multiple
+              onChange={handleProtonFileChange}
+              hidden
+            />
+          </>
+        )}
         <button
           type="button"
           className="secondary"
-          onClick={() => onSweep(['paste', 'file', 'm365'])}
+          onClick={() => onSweep(getDefaultSweepConnectorIds(settings))}
           disabled={sweeping}
         >
           Sweep all sources
