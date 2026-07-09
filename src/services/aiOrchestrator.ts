@@ -46,7 +46,8 @@ const grokProvider: AiProvider = {
   description: 'xAI Grok — smarter extraction from messy email and notes.',
   isConfigured: isGrokConfigured,
   async extract(inputs, settings) {
-    return extractWithGrok(inputs, settings)
+    const grok = await extractWithGrok(inputs, settings)
+    return grok.tasks
   },
 }
 
@@ -96,16 +97,87 @@ export function getProvider(id: AiProviderId): AiProvider {
   return AI_PROVIDERS.find((p) => p.id === id) ?? localProvider
 }
 
+export interface ExtractionStatus {
+  /** Provider that actually produced the tasks */
+  provider: AiProviderId
+  /** Provider selected in settings */
+  requestedProvider: AiProviderId
+  usedFallback: boolean
+  extractedCount: number
+  fallbackReason?: string
+}
+
+export interface ExtractionResult {
+  tasks: ExtractedTask[]
+  status: ExtractionStatus
+}
+
+function localExtractionResult(
+  inputs: RawInput[],
+  requestedProvider: AiProviderId,
+  fallbackReason?: string,
+): ExtractionResult {
+  const tasks = inputs.flatMap(extractTasksLocally)
+  return {
+    tasks,
+    status: {
+      provider: 'local',
+      requestedProvider,
+      usedFallback: requestedProvider !== 'local',
+      extractedCount: tasks.length,
+      fallbackReason,
+    },
+  }
+}
+
 export async function orchestrateExtraction(
   inputs: RawInput[],
   settings: AppSettings,
-): Promise<ExtractedTask[]> {
-  const provider = getProvider(settings.primaryAi)
+): Promise<ExtractionResult> {
+  const requestedProvider = settings.primaryAi
+  const provider = getProvider(requestedProvider)
   const enabled = settings.enabledAiProviders.includes(provider.id)
 
-  if (!enabled || !provider.isConfigured(settings)) {
-    return localProvider.extract(inputs, settings)
+  if (!enabled) {
+    return localExtractionResult(
+      inputs,
+      requestedProvider,
+      `${provider.name} is disabled — enable it under AI extraction`,
+    )
   }
 
-  return provider.extract(inputs, settings)
+  if (!provider.isConfigured(settings)) {
+    return localExtractionResult(
+      inputs,
+      requestedProvider,
+      provider.id === 'grok'
+        ? 'Grok API key missing — add it in Settings'
+        : `${provider.name} is not configured`,
+    )
+  }
+
+  if (provider.id === 'grok') {
+    const grok = await extractWithGrok(inputs, settings)
+    return {
+      tasks: grok.tasks,
+      status: {
+        provider: grok.usedGrok ? 'grok' : 'local',
+        requestedProvider,
+        usedFallback: !grok.usedGrok,
+        extractedCount: grok.tasks.length,
+        fallbackReason: grok.error,
+      },
+    }
+  }
+
+  const tasks = await provider.extract(inputs, settings)
+  return {
+    tasks,
+    status: {
+      provider: provider.id,
+      requestedProvider,
+      usedFallback: false,
+      extractedCount: tasks.length,
+    },
+  }
 }

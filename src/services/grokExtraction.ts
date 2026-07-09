@@ -93,13 +93,23 @@ function toExtractedTasks(
     }))
 }
 
+export interface GrokExtractionResult {
+  tasks: ExtractedTask[]
+  usedGrok: boolean
+  error?: string
+}
+
 export async function extractWithGrok(
   inputs: RawInput[],
   settings: AppSettings,
-): Promise<ExtractedTask[]> {
+): Promise<GrokExtractionResult> {
   const apiKey = getGrokApiKey(settings)
   if (!apiKey || inputs.length === 0) {
-    return inputs.flatMap(extractTasksLocally)
+    return {
+      tasks: inputs.flatMap(extractTasksLocally),
+      usedGrok: false,
+      error: !apiKey ? 'No Grok API key in Settings' : undefined,
+    }
   }
 
   try {
@@ -136,9 +146,14 @@ export async function extractWithGrok(
     const parsed = parseGrokTaskJson(content)
     const tasks = toExtractedTasks(parsed, inputs)
     if (tasks.length === 0) throw new Error('Grok found no actionable tasks')
-    return tasks
+    return { tasks, usedGrok: true }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
     console.warn('Grok extraction failed, using local rules:', err)
-    return inputs.flatMap(extractTasksLocally)
+    return {
+      tasks: inputs.flatMap(extractTasksLocally),
+      usedGrok: false,
+      error: message,
+    }
   }
 }

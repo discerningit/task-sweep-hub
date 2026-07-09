@@ -48,7 +48,15 @@ describe('syncFromTodo', () => {
     vi.mocked(isM365SignedIn).mockReturnValue(true)
     vi.mocked(getAllTasks).mockResolvedValue([])
     vi.mocked(sweepM365TodoOnly).mockResolvedValue([])
-    vi.mocked(orchestrateExtraction).mockResolvedValue([])
+    vi.mocked(orchestrateExtraction).mockResolvedValue({
+      tasks: [],
+      status: {
+        provider: 'local',
+        requestedProvider: 'local',
+        usedFallback: false,
+        extractedCount: 0,
+      },
+    })
     vi.mocked(deduplicateAgainstExisting).mockReturnValue([])
     vi.mocked(reconcileToDoCompletions).mockResolvedValue({ updated: [], completedCount: 0 })
   })
@@ -69,9 +77,15 @@ describe('syncFromTodo', () => {
         receivedAt: '2026-01-01T00:00:00.000Z',
       },
     ])
-    vi.mocked(orchestrateExtraction).mockResolvedValue([
-      { title: 'New from todo', priority: 'normal', source: 'm365-todo' },
-    ])
+    vi.mocked(orchestrateExtraction).mockResolvedValue({
+      tasks: [{ title: 'New from todo', priority: 'normal', source: 'm365-todo' }],
+      status: {
+        provider: 'local',
+        requestedProvider: 'local',
+        usedFallback: false,
+        extractedCount: 1,
+      },
+    })
     vi.mocked(deduplicateAgainstExisting).mockReturnValue([
       {
         id: 't1',

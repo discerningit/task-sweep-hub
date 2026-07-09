@@ -33,9 +33,9 @@ export async function runSyncFromTodo(): Promise<SyncFromTodoResult> {
   try {
     const inputs = await sweepM365TodoOnly(settings)
     if (inputs.length > 0) {
-      const extracted = await orchestrateExtraction(inputs, settings)
+      const extraction = await orchestrateExtraction(inputs, settings)
       const existing = await getAllTasks()
-      const newTasks = deduplicateAgainstExisting(extracted, existing)
+      const newTasks = deduplicateAgainstExisting(extraction.tasks, existing)
       if (newTasks.length > 0) {
         await saveTasks(newTasks)
         newTaskCount = newTasks.length

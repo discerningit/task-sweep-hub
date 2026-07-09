@@ -16,7 +16,7 @@ import {
   sweepM365OneNote,
   type OneNoteSweepResult,
 } from './connectors/m365'
-import { orchestrateExtraction } from './aiOrchestrator'
+import { orchestrateExtraction, type ExtractionStatus } from './aiOrchestrator'
 import { deduplicateAgainstExisting } from './deduplication'
 import { scanForBeacons } from './beacon'
 import { pushNewTasksToPrimaryTool, reconcileToDoCompletions } from './primaryToolPush'
@@ -30,6 +30,7 @@ export interface SweepResult {
   pushedToTodoCount: number
   pushFailedCount: number
   completedFromTodoCount: number
+  extraction?: ExtractionStatus
   onenotePagesFound?: number
   onenotePagesImported?: number
   onenoteSectionsScanned?: number
@@ -45,9 +46,9 @@ async function finalizeSweep(
 ): Promise<SweepResult> {
   const beacons = scanForBeacons(allInputs, settings)
 
-  const extracted = await orchestrateExtraction(allInputs, settings)
+  const extraction = await orchestrateExtraction(allInputs, settings)
   const existing = await getAllTasks()
-  const newTasks = deduplicateAgainstExisting(extracted, existing)
+  const newTasks = deduplicateAgainstExisting(extraction.tasks, existing)
 
   let pushedToTodoCount = 0
   let pushFailedCount = 0
@@ -77,6 +78,7 @@ async function finalizeSweep(
     pushedToTodoCount,
     pushFailedCount,
     completedFromTodoCount: reconcile.completedCount,
+    extraction: extraction.status,
     onenotePagesFound: onenoteStats?.pagesFound,
     onenotePagesImported: onenoteImported,
     onenoteSectionsScanned: onenoteStats?.sectionsScanned,

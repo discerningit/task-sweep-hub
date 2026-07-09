@@ -13,6 +13,7 @@ import { BeaconTools } from './components/BeaconTools'
 import { SettingsPanel } from './components/SettingsPanel'
 import { useTasks } from './hooks/useTasks'
 import { runOneNoteSweep, runSweep, type SweepResult } from './services/sweepPipeline'
+import { AI_PROVIDERS, type ExtractionStatus } from './services/aiOrchestrator'
 import { runSyncFromTodo } from './services/syncFromTodo'
 import { exportTasksCsv } from './services/syncBack'
 import { initM365, isM365SignedIn } from './services/connectors'
@@ -22,8 +23,40 @@ import { needsDeviceSetup } from './services/settingsPack'
 
 type Tab = 'tasks' | 'beacon' | 'settings'
 
+function formatExtractionSummary(status: ExtractionStatus, newTaskCount: number): string {
+  const providerName =
+    AI_PROVIDERS.find((p) => p.id === status.provider)?.name ?? status.provider
+
+  if (status.provider === 'grok' && !status.usedFallback) {
+    let line = `AI: Grok extracted ${status.extractedCount} task(s).`
+    if (status.extractedCount > newTaskCount) {
+      line += ` ${status.extractedCount - newTaskCount} already in your list.`
+    }
+    return line
+  }
+
+  if (status.usedFallback) {
+    const reason = status.fallbackReason ?? 'unknown error'
+    let line = `AI: Grok unavailable (${reason}) — used local rules, ${status.extractedCount} task(s).`
+    if (status.extractedCount > newTaskCount) {
+      line += ` ${status.extractedCount - newTaskCount} already in your list.`
+    }
+    return line
+  }
+
+  let line = `AI: ${providerName} — ${status.extractedCount} task(s).`
+  if (status.extractedCount > newTaskCount) {
+    line += ` ${status.extractedCount - newTaskCount} already in your list.`
+  }
+  return line
+}
+
 function formatSweepSummary(result: SweepResult): string {
   let summary = `Found ${result.newTaskCount} new task(s) from ${result.sources.join(', ') || 'no sources'}.`
+
+  if (result.extraction) {
+    summary += ` ${formatExtractionSummary(result.extraction, result.newTaskCount)}`
+  }
 
   if (result.onenotePagesFound !== undefined) {
     summary += ` OneNote: ${result.onenotePagesFound} page(s) found, ${result.onenotePagesImported ?? 0} imported.`
