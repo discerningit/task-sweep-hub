@@ -13,6 +13,18 @@ export interface OneNotePageSummary {
   sectionName?: string
 }
 
+export interface OneNoteSectionSummary {
+  id: string
+  displayName?: string
+}
+
+export interface OneNoteDiscoveryResult {
+  pages: OneNotePageSummary[]
+  sectionsScanned: number
+  error?: string
+  detail?: string
+}
+
 /** Escape a literal for OData single-quoted strings */
 export function escapeODataString(value: string): string {
   return value.replace(/'/g, "''")
@@ -55,6 +67,50 @@ export function sortPagesByModified(pages: OneNotePageSummary[]): OneNotePageSum
   return [...pages].sort((a, b) =>
     (b.lastModifiedDateTime ?? '').localeCompare(a.lastModifiedDateTime ?? ''),
   )
+}
+
+/** Graph returns mixed property names across OneNote OData vs JSON shapes */
+export function normalizeOneNoteSection(raw: Record<string, unknown>): OneNoteSectionSummary | null {
+  const id = typeof raw.id === 'string' ? raw.id : ''
+  if (!id) return null
+  const name =
+    typeof raw.displayName === 'string'
+      ? raw.displayName
+      : typeof raw.name === 'string'
+        ? raw.name
+        : undefined
+  return { id, displayName: name }
+}
+
+export function normalizeOneNotePage(
+  raw: Record<string, unknown>,
+  sectionName?: string,
+): OneNotePageSummary | null {
+  const id = typeof raw.id === 'string' ? raw.id : ''
+  if (!id) return null
+  const modified = raw.lastModifiedDateTime ?? raw.lastModifiedTime
+  return {
+    id,
+    title: typeof raw.title === 'string' ? raw.title : undefined,
+    lastModifiedDateTime: typeof modified === 'string' ? modified : undefined,
+    links: raw.links as OneNotePageSummary['links'],
+    sectionName,
+  }
+}
+
+export function prioritizeBeaconPages(
+  pages: OneNotePageSummary[],
+  beaconMarker?: string,
+): OneNotePageSummary[] {
+  if (!beaconMarker?.trim()) return pages
+  const marker = beaconMarker.trim()
+  const matches: OneNotePageSummary[] = []
+  const rest: OneNotePageSummary[] = []
+  for (const page of pages) {
+    if (page.title?.includes(marker)) matches.push(page)
+    else rest.push(page)
+  }
+  return [...matches, ...rest]
 }
 
 /**

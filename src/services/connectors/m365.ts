@@ -21,13 +21,16 @@ import {
 import type { AppSettings, Connector, RawInput, Task, TaskPriority } from '../../types/task'
 import { htmlToText } from './onenoteHtml'
 import {
-  buildBeaconTitleFilter,
-  buildGraphQuery,
   dedupePagesById,
   encodeOneNoteResourceId,
+  normalizeOneNotePage,
+  normalizeOneNoteSection,
+  prioritizeBeaconPages,
   shouldIncludeOneNotePage,
   sortPagesByModified,
+  type OneNoteDiscoveryResult,
   type OneNotePageSummary,
+  type OneNoteSectionSummary,
 } from './onenotePages'
 
 const SCOPES = [
@@ -35,7 +38,6 @@ const SCOPES = [
   'Tasks.ReadWrite',
   'Mail.ReadWrite',
   'Notes.Read',
-  'Notes.Read.All',
 ]
 
 /** Mirrored from Settings for auth bootstrap on page load */
@@ -161,11 +163,25 @@ export async function signOutM365(settings: AppSettings): Promise<void> {
   if (account) await msal.logoutRedirect({ account })
 }
 
+interface GraphErrorBody {
+  error?: { code?: string; message?: string }
+}
+
 async function graphGet<T>(token: string, path: string): Promise<T> {
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (!res.ok) throw new Error(`Graph API ${res.status}: ${path}`)
+  if (!res.ok) {
+    let detail = ''
+    try {
+      const body = (await res.json()) as GraphErrorBody
+      const parts = [body.error?.code, body.error?.message].filter(Boolean)
+      detail = parts.join(': ')
+    } catch {
+      // ignore non-JSON error bodies
+    }
+    throw new Error(`Graph API ${res.status}: ${path}${detail ? ` — ${detail}` : ''}`)
+  }
   return res.json() as Promise<T>
 }
 
@@ -302,14 +318,6 @@ interface GraphMessages {
   }[]
 }
 
-interface GraphOneNotePages {
-  value: OneNotePageSummary[]
-}
-
-interface GraphOneNoteSections {
-  value: { id: string; displayName?: string }[]
-}
-
 interface GraphPagePreview {
   previewText?: string
 }
@@ -318,6 +326,8 @@ export interface OneNoteSweepResult {
   inputs: RawInput[]
   pagesFound: number
   pagesImported: number
+  sectionsScanned?: number
+  detail?: string
   error?: string
 }
 
@@ -334,121 +344,154 @@ export function getLastOneNoteSweepResult(): OneNoteSweepResult {
 
 const ONENOTE_PAGE_LIMIT = 20
 const ONENOTE_CONTENT_LIMIT = 8000
-const ONENOTE_SECTION_PAGE_BATCH = 30
+const ONENOTE_MAX_SECTIONS = 40
 
-async function listOneNotePagesViaSections(token: string): Promise<OneNotePageSummary[]> {
-  const sections = await graphGet<GraphOneNoteSections>(
-    token,
-    buildGraphQuery('/me/onenote/sections', {
-      $select: 'id,displayName',
-    }),
-  )
-
-  const pages: OneNotePageSummary[] = []
-
-  for (const section of sections.value ?? []) {
-    const sectionPages = await graphGet<GraphOneNotePages>(
-      token,
-      buildGraphQuery(
-        `/me/onenote/sections/${encodeOneNoteResourceId(section.id)}/pages`,
-        {
-          $top: ONENOTE_SECTION_PAGE_BATCH,
-          $select: 'id,title,links,lastModifiedDateTime',
-        },
-      ),
-    )
-
-    for (const page of sectionPages.value ?? []) {
-      if (!page.id) continue
-      pages.push({
-        ...page,
-        sectionName: section.displayName,
-      })
-    }
-  }
-
-  return pages
+interface GraphListResponse {
+  value?: Record<string, unknown>[]
 }
 
-async function listOneNotePagesFlat(token: string, limit: number): Promise<OneNotePageSummary[]> {
-  const path = buildGraphQuery('/me/onenote/pages', {
-    $top: limit,
-    $select: 'id,title,links,lastModifiedDateTime',
+function dedupeSections(sections: OneNoteSectionSummary[]): OneNoteSectionSummary[] {
+  const seen = new Set<string>()
+  return sections.filter((section) => {
+    if (seen.has(section.id)) return false
+    seen.add(section.id)
+    return true
   })
-  try {
-    const pages = await graphGet<GraphOneNotePages>(token, path)
-    return pages.value ?? []
-  } catch {
-    // Minimal query if $select combination is rejected for this account
-    const fallback = await graphGet<GraphOneNotePages>(
-      token,
-      buildGraphQuery('/me/onenote/pages', { $top: limit }),
-    )
-    return fallback.value ?? []
-  }
-}
-
-async function listOneNotePagesByBeaconTitle(
-  token: string,
-  beaconMarker: string,
-): Promise<OneNotePageSummary[]> {
-  const pages = await graphGet<GraphOneNotePages>(
-    token,
-    buildGraphQuery('/me/onenote/pages', {
-      $filter: buildBeaconTitleFilter(beaconMarker),
-      $top: 10,
-      $select: 'id,title,links,lastModifiedDateTime',
-    }),
-  )
-  return pages.value ?? []
 }
 
 function formatOneNoteError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
-  if (message.includes('403')) {
-    return 'OneNote access denied — add Notes.Read in Azure API permissions, then sign out/in in Settings.'
+  if (
+    message.includes('403') ||
+    message.includes('40003') ||
+    message.includes('40004') ||
+    message.includes('40007')
+  ) {
+    return 'OneNote permission missing — add Notes.Read in Azure API permissions, then sign out/in in Settings.'
   }
-  if (message.includes('401')) {
+  if (message.includes('401') || message.includes('40001')) {
     return 'OneNote sign-in expired — open Settings and sign in to Microsoft 365 again.'
   }
-  if (message.includes('400')) {
-    return 'OneNote query failed — retrying with a simpler request. If this persists, sign out/in in Settings.'
+  if (message.includes('20266')) {
+    return 'OneNote has many sections — scanning section by section (this is normal).'
   }
-  return message
+  return message.length > 180 ? `${message.slice(0, 180)}…` : message
+}
+
+async function listOneNoteSections(token: string): Promise<OneNoteSectionSummary[]> {
+  const sections: OneNoteSectionSummary[] = []
+
+  try {
+    const res = await graphGet<GraphListResponse>(token, '/me/onenote/sections')
+    for (const raw of res.value ?? []) {
+      const section = normalizeOneNoteSection(raw)
+      if (section) sections.push(section)
+    }
+  } catch (e) {
+    console.warn('OneNote /sections failed:', e)
+  }
+
+  if (sections.length > 0) return dedupeSections(sections)
+
+  const notebooks = await graphGet<GraphListResponse>(token, '/me/onenote/notebooks')
+  for (const notebook of notebooks.value ?? []) {
+    const notebookId = typeof notebook.id === 'string' ? notebook.id : ''
+    if (!notebookId) continue
+
+    const nbSections = await graphGet<GraphListResponse>(
+      token,
+      `/me/onenote/notebooks/${encodeOneNoteResourceId(notebookId)}/sections`,
+    )
+    for (const raw of nbSections.value ?? []) {
+      const section = normalizeOneNoteSection(raw)
+      if (section) sections.push(section)
+    }
+  }
+
+  return dedupeSections(sections)
+}
+
+async function listPagesForSection(
+  token: string,
+  section: OneNoteSectionSummary,
+): Promise<OneNotePageSummary[]> {
+  const res = await graphGet<GraphListResponse>(
+    token,
+    `/me/onenote/sections/${encodeOneNoteResourceId(section.id)}/pages`,
+  )
+
+  const pages: OneNotePageSummary[] = []
+  for (const raw of res.value ?? []) {
+    const page = normalizeOneNotePage(raw, section.displayName)
+    if (page) pages.push(page)
+  }
+  return pages
 }
 
 async function discoverOneNotePages(
   token: string,
   beaconMarker?: string,
-): Promise<{ pages: OneNotePageSummary[]; error?: string }> {
+): Promise<OneNoteDiscoveryResult> {
   const collected: OneNotePageSummary[] = []
   let lastError: string | undefined
+  let sectionErrors = 0
+  let notebooksFound = 0
+  let sectionsScanned = 0
 
-  if (beaconMarker) {
-    try {
-      collected.push(...(await listOneNotePagesByBeaconTitle(token, beaconMarker)))
-    } catch (e) {
-      lastError = formatOneNoteError(e)
-      console.warn('OneNote beacon title search failed:', e)
-    }
+  let sections: OneNoteSectionSummary[] = []
+  try {
+    sections = await listOneNoteSections(token)
+  } catch (e) {
+    lastError = formatOneNoteError(e)
+    console.warn('OneNote section discovery failed:', e)
   }
 
   try {
-    collected.push(...(await listOneNotePagesViaSections(token)))
+    const notebooks = await graphGet<GraphListResponse>(token, '/me/onenote/notebooks')
+    notebooksFound = notebooks.value?.length ?? 0
   } catch (e) {
-    lastError = formatOneNoteError(e)
-    console.warn('OneNote section page listing failed, falling back to flat query:', e)
+    if (!lastError) lastError = formatOneNoteError(e)
+    console.warn('OneNote /notebooks failed:', e)
+  }
+
+  for (const section of sections.slice(0, ONENOTE_MAX_SECTIONS)) {
+    sectionsScanned++
     try {
-      collected.push(...(await listOneNotePagesFlat(token, ONENOTE_PAGE_LIMIT)))
-      lastError = undefined
-    } catch (fallbackError) {
-      lastError = formatOneNoteError(fallbackError)
-      console.warn('OneNote flat page listing failed:', fallbackError)
+      collected.push(...(await listPagesForSection(token, section)))
+      if (collected.length >= ONENOTE_PAGE_LIMIT * 3) break
+    } catch (e) {
+      sectionErrors++
+      if (!lastError) lastError = formatOneNoteError(e)
+      console.warn(`OneNote pages failed for section ${section.id}:`, e)
     }
   }
 
-  const pages = sortPagesByModified(dedupePagesById(collected)).slice(0, ONENOTE_PAGE_LIMIT)
-  return { pages, error: pages.length === 0 ? lastError : undefined }
+  const pages = prioritizeBeaconPages(
+    sortPagesByModified(dedupePagesById(collected)),
+    beaconMarker,
+  ).slice(0, ONENOTE_PAGE_LIMIT)
+
+  let detail = `Scanned ${sectionsScanned} section(s), ${notebooksFound} notebook(s).`
+  if (sectionErrors > 0) detail += ` ${sectionErrors} section(s) could not be read.`
+
+  let error: string | undefined
+  if (pages.length === 0) {
+    if (notebooksFound === 0 && sections.length === 0) {
+      error =
+        'No OneNote notebooks found. Open the OneNote app, create a notebook and page, wait for sync, then retry.'
+    } else if (sections.length === 0) {
+      error = `Found ${notebooksFound} notebook(s) but no sections with pages. Add a page in OneNote, then retry.`
+    } else if (sectionsScanned > 0 && sectionErrors === sectionsScanned) {
+      error = lastError ?? 'Could not read pages from any section.'
+    } else if (sectionsScanned > 0) {
+      detail += ' Sections exist but no pages were returned yet.'
+      error = lastError
+    } else {
+      error = lastError
+    }
+  }
+
+  return { pages, sectionsScanned, error, detail }
 }
 
 async function readOneNotePageText(token: string, pageId: string): Promise<string> {
@@ -560,6 +603,8 @@ export async function sweepM365OneNote(
     inputs,
     pagesFound: pages.length,
     pagesImported: inputs.length,
+    sectionsScanned: discovery.sectionsScanned,
+    detail: discovery.detail,
     error: discovery.error,
   }
   lastOneNoteSweepResult = result

@@ -27,6 +27,12 @@ function formatSweepSummary(result: SweepResult): string {
 
   if (result.onenotePagesFound !== undefined) {
     summary += ` OneNote: ${result.onenotePagesFound} page(s) found, ${result.onenotePagesImported ?? 0} imported.`
+    if (result.onenoteSectionsScanned !== undefined) {
+      summary += ` (${result.onenoteSectionsScanned} section(s) scanned)`
+    }
+    if (result.onenoteDetail) {
+      summary += ` ${result.onenoteDetail}`
+    }
     if (result.onenoteError) {
       summary += ` ${result.onenoteError}`
     } else if (result.onenotePagesFound === 0) {

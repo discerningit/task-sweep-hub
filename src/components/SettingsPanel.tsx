@@ -77,7 +77,7 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         URL exactly (e.g. <code>http://localhost:5173</code> for dev, or your Cloudflare /
         GitHub Pages HTTPS URL after deploy — see DEPLOY.md).
         Permissions: Tasks.ReadWrite, Mail.ReadWrite, Notes.Read (OneNote), User.Read.
-        Personal Microsoft accounts use Notes.Read (not Notes.Read.All).
+        After adding Notes.Read, sign out and sign in again once.
         Sign-in opens Microsoft in this same window (no popup).
         After upgrading permissions, sign out and sign in again once.
       </p>

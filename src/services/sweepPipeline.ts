@@ -14,6 +14,7 @@ import {
   getLastOneNoteSweepResult,
   isM365SignedIn,
   sweepM365OneNote,
+  type OneNoteSweepResult,
 } from './connectors/m365'
 import { orchestrateExtraction } from './aiOrchestrator'
 import { deduplicateAgainstExisting } from './deduplication'
@@ -31,6 +32,8 @@ export interface SweepResult {
   completedFromTodoCount: number
   onenotePagesFound?: number
   onenotePagesImported?: number
+  onenoteSectionsScanned?: number
+  onenoteDetail?: string
   onenoteError?: string
 }
 
@@ -38,7 +41,7 @@ async function finalizeSweep(
   allInputs: RawInput[],
   sources: string[],
   settings: Awaited<ReturnType<typeof getSettings>>,
-  onenoteStats?: { pagesFound: number; pagesImported: number; error?: string },
+  onenoteStats?: OneNoteSweepResult,
 ): Promise<SweepResult> {
   const beacons = scanForBeacons(allInputs, settings)
 
@@ -76,6 +79,8 @@ async function finalizeSweep(
     completedFromTodoCount: reconcile.completedCount,
     onenotePagesFound: onenoteStats?.pagesFound,
     onenotePagesImported: onenoteImported,
+    onenoteSectionsScanned: onenoteStats?.sectionsScanned,
+    onenoteDetail: onenoteStats?.detail,
     onenoteError: onenoteStats?.error,
   }
 }

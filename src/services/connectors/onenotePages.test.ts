@@ -4,6 +4,8 @@ import {
   buildGraphQuery,
   dedupePagesById,
   encodeOneNoteResourceId,
+  normalizeOneNotePage,
+  prioritizeBeaconPages,
   shouldIncludeOneNotePage,
   sortPagesByModified,
 } from './onenotePages'
@@ -61,6 +63,30 @@ describe('buildGraphQuery', () => {
 describe('encodeOneNoteResourceId', () => {
   it('encodes exclamation marks in page ids', () => {
     expect(encodeOneNoteResourceId('1-abc!def')).toBe('1-abc%21def')
+  })
+})
+
+describe('normalizeOneNotePage', () => {
+  it('accepts lastModifiedTime from OData responses', () => {
+    const page = normalizeOneNotePage({
+      id: 'page-1',
+      title: 'Test',
+      lastModifiedTime: '2026-07-01T00:00:00Z',
+    })
+    expect(page?.lastModifiedDateTime).toBe('2026-07-01T00:00:00Z')
+  })
+})
+
+describe('prioritizeBeaconPages', () => {
+  it('puts beacon-titled pages first', () => {
+    const sorted = prioritizeBeaconPages(
+      [
+        { id: 'a', title: 'Other' },
+        { id: 'b', title: '[TaskSweep-Beacon] Test' },
+      ],
+      '[TaskSweep-Beacon]',
+    )
+    expect(sorted[0].id).toBe('b')
   })
 })
 
