@@ -58,13 +58,18 @@ export function useTasks() {
     void refresh()
   }, [refresh])
 
+  const sortTasks = useCallback(
+    (list: Task[]) => [...list].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [],
+  )
+
   const updateTask = useCallback(
     async (task: Task) => {
       const updated = { ...task, updatedAt: new Date().toISOString() }
       await saveTask(updated)
-      await refresh()
+      setTasks((prev) => sortTasks(prev.map((t) => (t.id === updated.id ? updated : t))))
     },
-    [refresh],
+    [sortTasks],
   )
 
   const markComplete = useCallback(
@@ -109,10 +114,21 @@ export function useTasks() {
 
   const removeTask = useCallback(
     async (id: string) => {
-      await deleteTask(id)
-      await refresh()
+      let removed: Task | undefined
+      setTasks((prev) => {
+        removed = prev.find((t) => t.id === id)
+        return prev.filter((t) => t.id !== id)
+      })
+      try {
+        await deleteTask(id)
+      } catch {
+        if (removed) {
+          setTasks((prev) => sortTasks([...prev, removed!]))
+        }
+        setMessage('Could not delete task — try again.')
+      }
     },
-    [refresh],
+    [sortTasks],
   )
 
   const updateSettings = useCallback(
