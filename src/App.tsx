@@ -1,7 +1,7 @@
 /**
  * TaskSweep Hub — main app shell
  *
- * Tabs: Tasks | Beacon | Settings
+ * Tabs: Tasks | Settings
  * All data stays local in IndexedDB unless you connect M365.
  */
 
@@ -9,7 +9,6 @@ import { useCallback, useState } from 'react'
 import { InputArea } from './components/InputArea'
 import { TaskList } from './components/TaskList'
 import { AiSelector } from './components/AiSelector'
-import { BeaconTools } from './components/BeaconTools'
 import { SettingsPanel } from './components/SettingsPanel'
 import { useTasks } from './hooks/useTasks'
 import { runOneNoteSweep, runSweep, type SweepResult } from './services/sweepPipeline'
@@ -17,11 +16,10 @@ import { AI_PROVIDERS, type ExtractionStatus } from './services/aiOrchestrator'
 import { runSyncFromTodo } from './services/syncFromTodo'
 import { exportTasksCsv } from './services/syncBack'
 import { initM365, isM365SignedIn } from './services/connectors'
-import type { BeaconHit } from './types/task'
 import { needsDeviceSetup } from './services/settingsPack'
 
 
-type Tab = 'tasks' | 'beacon' | 'settings'
+type Tab = 'tasks' | 'settings'
 
 function formatExtractionSummary(status: ExtractionStatus, newTaskCount: number): string {
   const providerName =
@@ -71,7 +69,7 @@ function formatSweepSummary(result: SweepResult): string {
     } else if (result.onenotePagesFound === 0) {
       summary += ' Add Notes.Read in Azure API permissions, then sign out/in in Settings.'
     } else if ((result.onenotePagesImported ?? 0) === 0) {
-      summary += ' Pages were listed but had no readable text — add body content or a beacon in the title.'
+      summary += ' Pages were listed but had no readable text — add body content or your beacon marker in the title.'
     }
   }
 
@@ -108,8 +106,6 @@ function App() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'open' | 'completed' | 'snoozed'>('open')
   const [sweepSummary, setSweepSummary] = useState<string | null>(null)
-  const [beaconAlerts, setBeaconAlerts] = useState<BeaconHit[]>([])
-
 
   const handleSweep = useCallback(
     async (connectorIds: string[]) => {
@@ -119,7 +115,6 @@ function App() {
         if (settings?.m365ClientId) await initM365(settings)
         const result = await runSweep(connectorIds)
         setSweepSummary(formatSweepSummary(result))
-        if (result.beacons.length > 0) setBeaconAlerts(result.beacons)
         await refresh()
       } catch (err) {
         setSweepSummary(err instanceof Error ? err.message : 'Sweep failed')
@@ -137,7 +132,6 @@ function App() {
       if (settings?.m365ClientId) await initM365(settings)
       const result = await runOneNoteSweep()
       setSweepSummary(formatSweepSummary(result))
-      if (result.beacons.length > 0) setBeaconAlerts(result.beacons)
       await refresh()
     } catch (err) {
       setSweepSummary(err instanceof Error ? err.message : 'OneNote sweep failed')
@@ -195,13 +189,6 @@ function App() {
           </button>
           <button
             type="button"
-            className={tab === 'beacon' ? 'active' : ''}
-            onClick={() => setTab('beacon')}
-          >
-            Beacon
-          </button>
-          <button
-            type="button"
             className={tab === 'settings' ? 'active' : ''}
             onClick={() => setTab('settings')}
           >
@@ -234,13 +221,6 @@ function App() {
         <div className="toast" onClick={clearMessage}>
           {sweepSummary ?? message}
           <span className="toast-dismiss">click to dismiss</span>
-        </div>
-      )}
-
-      {beaconAlerts.length > 0 && tab === 'tasks' && (
-        <div className="beacon-alert">
-          <strong>Beacon detected</strong> — {beaconAlerts[0].suggestedConnector}
-          <button type="button" onClick={() => setBeaconAlerts([])}>Dismiss</button>
         </div>
       )}
 
@@ -297,13 +277,6 @@ function App() {
               />
             </section>
           </>
-        )}
-
-        {tab === 'beacon' && (
-          <BeaconTools
-            settings={settings}
-            onBeaconFound={(hit) => setBeaconAlerts([hit])}
-          />
         )}
 
         {tab === 'settings' && (

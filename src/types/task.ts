@@ -147,11 +147,3 @@ export interface Connector {
   /** Pull raw inputs for sweeping */
   sweep: () => Promise<RawInput[]>
 }
-
-/** Result of beacon scan */
-export interface BeaconHit {
-  source: TaskSource
-  marker: string
-  context: string
-  suggestedConnector?: string
-}

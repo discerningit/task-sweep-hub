@@ -139,6 +139,10 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
           onChange={(e) => setDraft({ ...draft, beaconMarker: e.target.value })}
         />
       </label>
+      <p className="hint">
+        Put this text in a OneNote page title to prioritize that page in OneNote sweeps.
+        Empty pages with the marker in the title are still imported.
+      </p>
 
       <label className="field">
         M365 Application (Client) ID

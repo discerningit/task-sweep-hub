@@ -8,7 +8,7 @@ import {
   saveTasks,
   getSettings,
 } from '../db/indexedDb'
-import type { BeaconHit, RawInput } from '../types/task'
+import type { RawInput } from '../types/task'
 import { getAllConnectors } from './connectors'
 import {
   getLastOneNoteSweepResult,
@@ -19,14 +19,12 @@ import {
 import { getSweepAccountIdsForSource } from './m365Accounts'
 import { orchestrateExtraction, type ExtractionStatus } from './aiOrchestrator'
 import { deduplicateAgainstExisting } from './deduplication'
-import { scanForBeacons } from './beacon'
 import { pushNewTasksToPrimaryTool, reconcileToDoCompletions } from './primaryToolPush'
 
 
 export interface SweepResult {
   newTaskCount: number
   totalScanned: number
-  beacons: BeaconHit[]
   sources: string[]
   pushedToTodoCount: number
   pushFailedCount: number
@@ -45,8 +43,6 @@ async function finalizeSweep(
   settings: Awaited<ReturnType<typeof getSettings>>,
   onenoteStats?: OneNoteSweepResult,
 ): Promise<SweepResult> {
-  const beacons = scanForBeacons(allInputs, settings)
-
   const extraction = await orchestrateExtraction(allInputs, settings)
   const existing = await getAllTasks()
   const newTasks = deduplicateAgainstExisting(extraction.tasks, existing)
@@ -74,7 +70,6 @@ async function finalizeSweep(
   return {
     newTaskCount: newTasks.length,
     totalScanned: allInputs.length,
-    beacons,
     sources,
     pushedToTodoCount,
     pushFailedCount,
