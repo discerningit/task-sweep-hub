@@ -8,6 +8,12 @@ vi.mock('./connectors/m365', () => ({
   getM365TodoTaskStatus: vi.fn(),
 }))
 
+vi.mock('./remindersPush', () => ({
+  pushToAppleReminders: vi.fn(),
+}))
+
+import { pushToAppleReminders } from './remindersPush'
+
 import { createM365TodoTask, getM365TodoTaskStatus, isM365SignedIn } from './connectors/m365'
 const settings: AppSettings = {
   enabledAiProviders: ['local'],
@@ -65,6 +71,25 @@ describe('primaryToolPush', () => {
     )
     expect(createM365TodoTask).not.toHaveBeenCalled()
     expect(result.pushedCount).toBe(0)
+  })
+
+  it('delegates to Apple Reminders push when configured', async () => {
+    vi.mocked(pushToAppleReminders).mockResolvedValue({
+      tasks: [task({ metadata: { pushedToReminders: 'true' }, syncStatus: 'synced' })],
+      pushedCount: 1,
+      failedCount: 0,
+      message: 'Shared 1 task(s)',
+    })
+
+    const result = await pushNewTasksToPrimaryTool(
+      [task()],
+      { ...settings, primaryTaskTool: 'apple-reminders' },
+    )
+
+    expect(pushToAppleReminders).toHaveBeenCalled()
+    expect(createM365TodoTask).not.toHaveBeenCalled()
+    expect(result.pushedCount).toBe(1)
+    expect(result.tasks[0].metadata?.pushedToReminders).toBe('true')
   })
 })
 

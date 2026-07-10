@@ -51,10 +51,15 @@ async function finalizeSweep(
   let pushFailedCount = 0
 
   if (newTasks.length > 0) {
-    const pushResult = await pushNewTasksToPrimaryTool(newTasks, settings)
-    pushedToTodoCount = pushResult.pushedCount
-    pushFailedCount = pushResult.failedCount
-    await saveTasks(pushResult.tasks)
+    // Apple Reminders has no API — user taps Share to Reminders manually
+    if (settings.primaryTaskTool === 'apple-reminders') {
+      await saveTasks(newTasks)
+    } else {
+      const pushResult = await pushNewTasksToPrimaryTool(newTasks, settings)
+      pushedToTodoCount = pushResult.pushedCount
+      pushFailedCount = pushResult.failedCount
+      await saveTasks(pushResult.tasks)
+    }
   }
 
   const latestTasks = await getAllTasks()

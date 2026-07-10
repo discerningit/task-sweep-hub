@@ -57,6 +57,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   primaryAi: 'local',
   primaryTaskTool: 'hub-only',
   protonMailEnabled: true,
+  remindersEnabled: true,
   beaconMarker: '[TaskSweep-Beacon]',
   contextTags: [
     'Cedar Ridge',

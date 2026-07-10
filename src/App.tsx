@@ -13,8 +13,11 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { useTasks } from './hooks/useTasks'
 import { runOneNoteSweep, runSweep, type SweepResult } from './services/sweepPipeline'
 import { AI_PROVIDERS, type ExtractionStatus } from './services/aiOrchestrator'
+import { saveTasks } from './db/indexedDb'
 import { runSyncFromTodo } from './services/syncFromTodo'
 import { exportTasksCsv } from './services/syncBack'
+import { pushToAppleReminders } from './services/remindersPush'
+import type { AppSettings } from './types/task'
 import { initM365, isM365SignedIn } from './services/connectors'
 import { needsDeviceSetup } from './services/settingsPack'
 
@@ -49,7 +52,7 @@ function formatExtractionSummary(status: ExtractionStatus, newTaskCount: number)
   return line
 }
 
-function formatSweepSummary(result: SweepResult): string {
+function formatSweepSummary(result: SweepResult, settings: AppSettings): string {
   let summary = `Found ${result.newTaskCount} new task(s) from ${result.sources.join(', ') || 'no sources'}.`
 
   if (result.extraction) {
@@ -76,6 +79,13 @@ function formatSweepSummary(result: SweepResult): string {
 
   if (result.pushedToTodoCount > 0) {
     summary += ` Pushed ${result.pushedToTodoCount} to Microsoft To Do.`
+  }
+  if (
+    settings.primaryTaskTool === 'apple-reminders' &&
+    result.newTaskCount > 0 &&
+    result.pushedToTodoCount === 0
+  ) {
+    summary += ' Tap Share to Reminders when ready to push open tasks.'
   }
   if (result.pushFailedCount > 0) {
     summary += ` ${result.pushFailedCount} failed to push to To Do.`
@@ -107,15 +117,34 @@ function App() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'open' | 'completed' | 'snoozed'>('open')
   const [sweepSummary, setSweepSummary] = useState<string | null>(null)
+  const [sharingReminders, setSharingReminders] = useState(false)
+
+  const handleShareToReminders = useCallback(async () => {
+    if (!settings) return
+    setSharingReminders(true)
+    setSweepSummary(null)
+    try {
+      const open = tasks.filter((t) => t.status === 'open')
+      const result = await pushToAppleReminders(open, settings)
+      await saveTasks(result.tasks)
+      setSweepSummary(result.message)
+      await refresh()
+    } catch (err) {
+      setSweepSummary(err instanceof Error ? err.message : 'Share to Reminders failed')
+    } finally {
+      setSharingReminders(false)
+    }
+  }, [tasks, settings, refresh])
 
   const handleSweep = useCallback(
     async (connectorIds: string[]) => {
+      if (!settings) return
       setSweeping(true)
       setSweepSummary(null)
       try {
-        if (settings?.m365ClientId) await initM365(settings)
+        if (settings.m365ClientId) await initM365(settings)
         const result = await runSweep(connectorIds)
-        setSweepSummary(formatSweepSummary(result))
+        setSweepSummary(formatSweepSummary(result, settings))
         await refresh()
       } catch (err) {
         setSweepSummary(err instanceof Error ? err.message : 'Sweep failed')
@@ -127,12 +156,13 @@ function App() {
   )
 
   const handleSweepOneNote = useCallback(async () => {
+    if (!settings) return
     setSweeping(true)
     setSweepSummary(null)
     try {
-      if (settings?.m365ClientId) await initM365(settings)
+      if (settings.m365ClientId) await initM365(settings)
       const result = await runOneNoteSweep()
-      setSweepSummary(formatSweepSummary(result))
+      setSweepSummary(formatSweepSummary(result, settings))
       await refresh()
     } catch (err) {
       setSweepSummary(err instanceof Error ? err.message : 'OneNote sweep failed')
@@ -258,15 +288,28 @@ function App() {
                   <option value="completed">Completed</option>
                   <option value="snoozed">Snoozed</option>
                 </select>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => void handleSyncFromTodo()}
-                  disabled={syncingTodo || sweeping}
-                  title="Pull new tasks and completions from Microsoft To Do only"
-                >
-                  {syncingTodo ? 'Syncing…' : 'Sync from To Do'}
-                </button>
+                {settings.primaryTaskTool === 'ms-todo' && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => void handleSyncFromTodo()}
+                    disabled={syncingTodo || sweeping}
+                    title="Pull new tasks and completions from Microsoft To Do only"
+                  >
+                    {syncingTodo ? 'Syncing…' : 'Sync from To Do'}
+                  </button>
+                )}
+                {settings.primaryTaskTool === 'apple-reminders' && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => void handleShareToReminders()}
+                    disabled={sharingReminders || sweeping}
+                    title="Share open tasks to Apple Reminders via iOS Share sheet"
+                  >
+                    {sharingReminders ? 'Sharing…' : 'Share to Reminders'}
+                  </button>
+                )}
               </div>
               <TaskList
                 tasks={tasks}
@@ -290,7 +333,7 @@ function App() {
       </main>
 
       <footer className="footer">
-        Local-first · Data stays on this device · M365: To Do, Outlook, OneNote
+        Local-first · Data stays on this device · M365: To Do, Outlook, OneNote · Apple Reminders via import / Share
       </footer>
     </div>
   )

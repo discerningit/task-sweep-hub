@@ -16,6 +16,7 @@ import {
   resolveTaskM365AccountId,
   stampM365Metadata,
 } from './m365Accounts'
+import { pushToAppleReminders } from './remindersPush'
 import type { AppSettings, Task } from '../types/task'
 
 export interface PushResult {
@@ -33,6 +34,15 @@ export async function pushNewTasksToPrimaryTool(
   tasks: Task[],
   settings: AppSettings,
 ): Promise<PushResult> {
+  if (settings.primaryTaskTool === 'apple-reminders') {
+    const result = await pushToAppleReminders(tasks, settings)
+    return {
+      tasks: result.tasks,
+      pushedCount: result.pushedCount,
+      failedCount: result.failedCount,
+    }
+  }
+
   if (settings.primaryTaskTool !== 'ms-todo') {
     return { tasks, pushedCount: 0, failedCount: 0 }
   }

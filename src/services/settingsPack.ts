@@ -19,6 +19,8 @@ export interface SettingsPack {
     | 'm365ActiveAccountId'
     | 'm365SweepAccountIds'
     | 'protonMailEnabled'
+    | 'remindersEnabled'
+    | 'remindersDefaultList'
     | 'beaconMarker'
     | 'contextTags'
     | 'primaryTaskTool'
@@ -38,6 +40,8 @@ export function createSettingsPack(settings: AppSettings): SettingsPack {
       m365ActiveAccountId: settings.m365ActiveAccountId,
       m365SweepAccountIds: settings.m365SweepAccountIds,
       protonMailEnabled: settings.protonMailEnabled,
+      remindersEnabled: settings.remindersEnabled,
+      remindersDefaultList: settings.remindersDefaultList,
       beaconMarker: settings.beaconMarker,
       contextTags: settings.contextTags,
       primaryTaskTool: settings.primaryTaskTool,

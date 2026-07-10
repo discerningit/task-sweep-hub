@@ -12,14 +12,16 @@ import { pasteConnector } from './paste'
 import { fileUploadConnector } from './fileUpload'
 import { createM365Connector } from './m365'
 import { createProtonMailConnector } from './protonMail'
+import { createAppleRemindersConnector } from './appleReminders'
 
 export function getAllConnectors(settings: AppSettings): Connector[] {
   return [
     pasteConnector,
     fileUploadConnector,
     createProtonMailConnector(() => settings),
+    createAppleRemindersConnector(() => settings),
     createM365Connector(() => settings),
-    // Future: iosExportConnector, jiraConnector
+    // Future: jiraConnector
   ]
 }
 
@@ -27,12 +29,14 @@ export function getAllConnectors(settings: AppSettings): Connector[] {
 export function getDefaultSweepConnectorIds(settings: AppSettings): string[] {
   const ids = ['paste', 'file', 'm365']
   if (settings.protonMailEnabled !== false) ids.push('proton-mail')
+  if (settings.remindersEnabled !== false) ids.push('apple-reminders')
   return ids
 }
 
 export { setPasteContent, clearPasteContent } from './paste'
 export { setUploadFiles, clearUploadFiles } from './fileUpload'
 export { setProtonMailFiles, clearProtonMailFiles } from './protonMail'
+export { setRemindersFiles, clearRemindersFiles } from './appleReminders'
 export {
   bootstrapM365Auth,
   clearM365OutlookFlag,

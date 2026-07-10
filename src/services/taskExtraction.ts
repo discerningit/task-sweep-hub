@@ -75,7 +75,34 @@ function splitIntoLines(content: string): string[] {
  * Extract tasks from one raw input chunk using local rules.
  * AI orchestrator can replace/enhance this when an API is configured.
  */
+function extractAppleRemindersInput(input: RawInput): ExtractedTask[] {
+  const lines = input.content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  const title = lines[0] ?? ''
+  if (title.length < 2) return []
+
+  const notes = lines.find((l) => !l.startsWith('Due:') && !l.startsWith('List:') && l !== title)
+  const dueFromMeta = input.metadata?.dueDate
+  const dueFromLine = lines.find((l) => l.startsWith('Due:'))?.slice(4).trim()
+
+  return [
+    {
+      title,
+      dueDate: dueFromMeta ?? dueFromLine ?? extractDueDate(input.content),
+      priority: inferPriority(input.content),
+      notes: notes && notes !== title ? notes : undefined,
+      source: input.source,
+      sourceId: input.metadata?.reminderId,
+      metadata: input.metadata,
+      tags: inferTags(input.content),
+    },
+  ]
+}
+
 export function extractTasksLocally(input: RawInput): ExtractedTask[] {
+  if (input.source === 'apple-reminders') {
+    return extractAppleRemindersInput(input)
+  }
+
   const lines = splitIntoLines(input.content)
   const tasks: ExtractedTask[] = []
 

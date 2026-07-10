@@ -11,6 +11,7 @@ export type TaskSource =
   | 'paste'
   | 'file'
   | 'proton-mail'
+  | 'apple-reminders'
   | 'm365-todo'
   | 'm365-outlook'
   | 'm365-onenote'
@@ -107,6 +108,10 @@ export interface AppSettings {
   m365SweepAccountIds?: string[]
   /** Enable Proton Mail .eml import connector (default: true) */
   protonMailEnabled?: boolean
+  /** Enable Apple Reminders import connector (default: true) */
+  remindersEnabled?: boolean
+  /** Default Reminders list name when pushing via Share sheet */
+  remindersDefaultList?: string
   /** xAI Grok API key (optional, stored locally on device) */
   grokApiKey?: string
   /** Where completed tasks should sync when possible */

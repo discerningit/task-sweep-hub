@@ -214,6 +214,35 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
         </p>
       </div>
 
+      <div className="reminders-settings">
+        <h3>Apple Reminders</h3>
+        <label className="field inline-check">
+          <input
+            type="checkbox"
+            checked={draft.remindersEnabled !== false}
+            onChange={(e) => setDraft({ ...draft, remindersEnabled: e.target.checked })}
+          />
+          Enable Apple Reminders connector
+        </label>
+        <label className="field">
+          Default Reminders list (when pushing)
+          <input
+            value={draft.remindersDefaultList ?? ''}
+            onChange={(e) =>
+              setDraft({ ...draft, remindersDefaultList: e.target.value || undefined })
+            }
+            placeholder="e.g. Work, Personal, Cedar Ridge"
+          />
+        </label>
+        <p className="hint">
+          Apple Reminders has no browser API. <strong>Import:</strong> run an iOS Shortcut that exports
+          open reminders as <code>.json</code> or <code>.txt</code>, then tap <strong>Sweep Reminders</strong>{' '}
+          on the Tasks tab. <strong>Push:</strong> set Primary task tool to Apple Reminders, then tap{' '}
+          <strong>Share to Reminders</strong> — choose a Shortcut that adds each line as a reminder.
+          Sweeps do not auto-open the Share sheet; you push when ready.
+        </p>
+      </div>
+
       {accounts.length > 0 && draft.primaryTaskTool === 'ms-todo' && (
         <label className="field">
           Push new tasks to To Do account

@@ -4,6 +4,7 @@ import {
   getDefaultSweepConnectorIds,
   setPasteContent,
   setProtonMailFiles,
+  setRemindersFiles,
   setUploadFiles,
 } from '../services/connectors'
 import type { AppSettings } from '../types/task'
@@ -25,8 +26,10 @@ export function InputArea({
 }: InputAreaProps) {
   const [text, setText] = useState('')
   const protonInputRef = useRef<HTMLInputElement>(null)
+  const remindersInputRef = useRef<HTMLInputElement>(null)
 
   const protonEnabled = settings.protonMailEnabled !== false
+  const remindersEnabled = settings.remindersEnabled !== false
 
   const handleSweepPaste = () => {
     if (!text.trim()) return
@@ -47,6 +50,14 @@ export function InputArea({
     if (e.target.files?.length) {
       setProtonMailFiles(e.target.files)
       onSweep(['proton-mail'])
+      e.target.value = ''
+    }
+  }
+
+  const handleRemindersFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) {
+      setRemindersFiles(e.target.files)
+      onSweep(['apple-reminders'])
       e.target.value = ''
     }
   }
@@ -99,6 +110,27 @@ export function InputArea({
               accept=".eml,message/rfc822"
               multiple
               onChange={handleProtonFileChange}
+              hidden
+            />
+          </>
+        )}
+        {remindersEnabled && (
+          <>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => remindersInputRef.current?.click()}
+              disabled={sweeping}
+              title="Import JSON or text from iOS Reminders / Shortcuts"
+            >
+              {sweeping ? 'Sweeping…' : 'Sweep Reminders'}
+            </button>
+            <input
+              ref={remindersInputRef}
+              type="file"
+              accept=".json,.txt,.csv"
+              multiple
+              onChange={handleRemindersFileChange}
               hidden
             />
           </>

@@ -11,6 +11,16 @@ function pasteInput(content: string): RawInput {
   }
 }
 
+function remindersInput(content: string, metadata?: RawInput['metadata']): RawInput {
+  return {
+    id: 'rem-1',
+    source: 'apple-reminders',
+    content,
+    receivedAt: '2026-01-01T00:00:00.000Z',
+    metadata,
+  }
+}
+
 describe('taskExtraction', () => {
   it('extracts bullet-list tasks', () => {
     const tasks = extractTasksLocally(pasteInput(`
@@ -33,6 +43,22 @@ describe('taskExtraction', () => {
   it('tags Cedar Ridge home project context', () => {
     const tasks = extractTasksLocally(pasteInput('- Pick up lumber for Cedar Ridge deck'))
     expect(tasks[0]?.tags).toContain('Cedar Ridge')
+  })
+
+  it('imports apple-reminders exports 1:1 without line splitting', () => {
+    const tasks = extractTasksLocally(
+      remindersInput('Call contractor\nPermit follow-up\nDue: 7/15\nList: Cedar Ridge', {
+        reminderId: 'r-42',
+        dueDate: '2026-07-15',
+        remindersList: 'Cedar Ridge',
+      }),
+    )
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0].title).toBe('Call contractor')
+    expect(tasks[0].source).toBe('apple-reminders')
+    expect(tasks[0].sourceId).toBe('r-42')
+    expect(tasks[0].dueDate).toBe('2026-07-15')
+    expect(tasks[0].notes).toBe('Permit follow-up')
   })
 
   it('ignores empty lines and noise', () => {

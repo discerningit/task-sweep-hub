@@ -20,6 +20,17 @@ describe('settingsPack', () => {
     expect(pack.settings.m365ClientId).toBe('test-client-id')
   })
 
+  it('includes Apple Reminders settings in setup pack', () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      remindersEnabled: true,
+      remindersDefaultList: 'Work',
+    }
+    const pack = parseSettingsPack(encodeSettingsPack(settings))
+    expect(pack.settings.remindersEnabled).toBe(true)
+    expect(pack.settings.remindersDefaultList).toBe('Work')
+  })
+
   it('rejects invalid JSON', () => {
     expect(() => parseSettingsPack('not json')).toThrow(/valid JSON/)
   })
