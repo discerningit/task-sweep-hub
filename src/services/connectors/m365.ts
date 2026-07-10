@@ -21,6 +21,7 @@ import {
 import type { AppSettings, Connector, M365Account, RawInput, Task, TaskPriority } from '../../types/task'
 import {
   findM365Account,
+  getAccountEnabledSources,
   getActiveM365AccountId,
   getSweepAccountIds,
   isAccountSourceEnabled,
@@ -178,6 +179,18 @@ export async function signInM365(
  * Request Graph consent for an account's enabled sources (e.g. after enabling Outlook).
  * Redirects to Microsoft if silent token acquisition fails.
  */
+/** Ensure Outlook/OneNote scopes are consented for every account that needs them */
+export async function ensureM365ExtraConsents(settings: AppSettings): Promise<void> {
+  if (!settings.m365ClientId || !isM365SignedIn()) return
+  await initM365(settings)
+  for (const account of settings.m365Accounts ?? []) {
+    const sources = getAccountEnabledSources(account)
+    if (!sources.includes('outlook') && !sources.includes('onenote')) continue
+    const ok = await requestM365SourceAccess(settings, account.homeAccountId)
+    if (!ok) return
+  }
+}
+
 export async function requestM365SourceAccess(
   settings: AppSettings,
   homeAccountId: string,
@@ -447,7 +460,7 @@ function formatOneNoteError(error: unknown): string {
     message.includes('40004') ||
     message.includes('40007')
   ) {
-    return 'OneNote permission missing — add Notes.Read in Azure API permissions, then sign out/in in Settings.'
+    return 'OneNote access not granted on this device — in Settings, ensure OneNote is checked for your account, tap Save, and approve the Microsoft prompt. Also confirm Notes.Read is added in Azure API permissions.'
   }
   if (message.includes('401') || message.includes('40001')) {
     return 'OneNote sign-in expired — open Settings and sign in to Microsoft 365 again.'

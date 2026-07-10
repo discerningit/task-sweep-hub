@@ -14,6 +14,7 @@ import {
 import type { AppSettings, Task } from '../types/task'
 import { completeTask, snoozeTask } from '../services/syncBack'
 import {
+  ensureM365ExtraConsents,
   initM365,
   M365_SIGNED_IN_FLAG,
   refreshM365AccountSettings,
@@ -33,11 +34,8 @@ export function useTasks() {
       getSettings(),
     ])
     syncM365ClientId(appSettings.m365ClientId)
+    const justSignedIn = Boolean(sessionStorage.getItem(M365_SIGNED_IN_FLAG))
     if (appSettings.m365ClientId) await initM365(appSettings)
-    if (sessionStorage.getItem(M365_SIGNED_IN_FLAG)) {
-      sessionStorage.removeItem(M365_SIGNED_IN_FLAG)
-      setMessage('Signed in to Microsoft 365')
-    }
 
     let settingsToUse = appSettings
     if (appSettings.m365ClientId) {
@@ -45,6 +43,12 @@ export function useTasks() {
       if (JSON.stringify(settingsToUse.m365Accounts) !== JSON.stringify(appSettings.m365Accounts)) {
         await saveSettings(settingsToUse)
       }
+    }
+
+    if (justSignedIn) {
+      sessionStorage.removeItem(M365_SIGNED_IN_FLAG)
+      setMessage('Signed in to Microsoft 365')
+      await ensureM365ExtraConsents(settingsToUse)
     }
 
     let tasksToShow = allTasks

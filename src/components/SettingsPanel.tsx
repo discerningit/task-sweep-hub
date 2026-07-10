@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import {
+  ensureM365ExtraConsents,
   initM365,
   isM365SignedIn,
   refreshM365AccountSettings,
-  requestM365SourceAccess,
   signInM365,
   signOutM365,
 } from '../services/connectors'
@@ -36,25 +36,13 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
       setupCompleted: Boolean(draft.m365ClientId) || draft.setupCompleted,
     }
     onSave(next)
-
-    if (!next.m365ClientId) return
-    await initM365(next)
-    for (const account of next.m365Accounts ?? []) {
-      const prev = settings.m365Accounts?.find((a) => a.homeAccountId === account.homeAccountId)
-      const prevSources = prev ? getAccountEnabledSources(prev) : []
-      const nextSources = getAccountEnabledSources(account)
-      const added = nextSources.filter((s) => !prevSources.includes(s))
-      const needsConsent = added.some((s) => s === 'outlook' || s === 'onenote')
-      if (needsConsent) {
-        await requestM365SourceAccess(next, account.homeAccountId)
-        break
-      }
-    }
+    await ensureM365ExtraConsents(next)
   }
 
-  const handleImport = (imported: AppSettings) => {
+  const handleImport = async (imported: AppSettings) => {
     setDraft(imported)
     onSave(imported)
+    await ensureM365ExtraConsents(imported)
   }
 
   const syncAccountsFromMsal = async (base: AppSettings): Promise<AppSettings> => {
@@ -73,6 +61,7 @@ export function SettingsPanel({ settings, onSave, onExport }: SettingsPanelProps
       setDraft(refreshed)
       onSave(refreshed)
       setM365SignedIn(true)
+      await ensureM365ExtraConsents(refreshed)
     }
   }
 

@@ -67,7 +67,8 @@ function formatSweepSummary(result: SweepResult): string {
     if (result.onenoteError) {
       summary += ` ${result.onenoteError}`
     } else if (result.onenotePagesFound === 0) {
-      summary += ' Add Notes.Read in Azure API permissions, then sign out/in in Settings.'
+      summary +=
+        ' Enable OneNote for your account in Settings, tap Save, and approve Microsoft access (Notes.Read).'
     } else if ((result.onenotePagesImported ?? 0) === 0) {
       summary += ' Pages were listed but had no readable text — add body content or your beacon marker in the title.'
     }
